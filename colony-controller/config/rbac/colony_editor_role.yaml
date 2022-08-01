@@ -1,0 +1,24 @@
+# permissions for end users to edit colonies.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: colony-editor-role
+rules:
+- apiGroups:
+  - abc-optimizer.innoventestech.com
+  resources:
+  - colonies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - abc-optimizer.innoventestech.com
+  resources:
+  - colonies/status
+  verbs:
+  - get

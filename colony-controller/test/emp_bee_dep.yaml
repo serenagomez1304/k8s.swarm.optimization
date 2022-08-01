@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: "employee-bee"
+  labels:
+    app: colony-sample
+spec:
+  replicas: 3
+  selector:
+    matchLabels: 
+      app: colony-sample
+  template:
+    metadata:
+      labels:
+        app: colony-sample
+    spec:
+      volumes:
+        - name: log-volume
+          hostPath: 
+            path: /mycolony
+      containers:
+        - name: employee-bee
+          image: "serenagomez/employee-bee-v1"
+          securityContext: 
+            privileged: true 
+          env: 
+            - name: BEE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: BEE_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          volumeMounts:
+            - name: log-volume
+              mountPath: /var/log/mycolony 
+

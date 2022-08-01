@@ -1,0 +1,14 @@
+apiVersion: abc-optimizer.innoventestech.com/v1
+kind: Colony
+metadata:
+  name: colony-sample
+spec:
+  # employee_bee_num: 5
+  # onlooker_bee_num: 5
+  number_of_cycles: 10
+  employee_bee_image: "serenagomez/employee-bee-v1"
+  onlooker_bee_image: "serenagomez/onlooker-bee-v1"
+  foodsource_image: "serenagomez/food-source-v1"
+  max_trial_count: 5
+  foodsource_num: 3
+  

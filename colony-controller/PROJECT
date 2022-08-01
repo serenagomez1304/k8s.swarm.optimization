@@ -1,0 +1,16 @@
+domain: innoventestech.com
+layout:
+- go.kubebuilder.io/v3
+projectName: colony-controller
+repo: abc-optimizer
+resources:
+- api:
+    crdVersion: v1
+    namespaced: true
+  controller: true
+  domain: innoventestech.com
+  group: abc-optimizer
+  kind: Colony
+  path: abc-optimizer/api/v1
+  version: v1
+version: "3"

@@ -1,0 +1,21 @@
+kind: ClusterRole
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: colony-sample-role
+rules:
+- apiGroups:
+  - abc-optimizer.innoventestech.com
+  resources:
+  - colonies
+  - colonies/status
+  - nodes
+  - persistentvolumes
+  - namespaces
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete

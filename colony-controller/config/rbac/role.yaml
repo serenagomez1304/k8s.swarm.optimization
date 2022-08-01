@@ -1,0 +1,34 @@
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  creationTimestamp: null
+  name: manager-role
+rules:
+- apiGroups:
+  - abc-optimizer.innoventestech.com
+  resources:
+  - colonies
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - abc-optimizer.innoventestech.com
+  resources:
+  - colonies/finalizers
+  verbs:
+  - update
+- apiGroups:
+  - abc-optimizer.innoventestech.com
+  resources:
+  - colonies/status
+  verbs:
+  - get
+  - list
+  - patch
+  - update

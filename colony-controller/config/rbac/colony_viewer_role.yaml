@@ -1,0 +1,20 @@
+# permissions for end users to view colonies.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: colony-viewer-role
+rules:
+- apiGroups:
+  - abc-optimizer.innoventestech.com
+  resources:
+  - colonies
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - abc-optimizer.innoventestech.com
+  resources:
+  - colonies/status
+  verbs:
+  - get

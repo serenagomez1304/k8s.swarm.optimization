@@ -1,0 +1,136 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.8.0
+  creationTimestamp: null
+  name: colonies.abc-optimizer.innoventestech.com
+spec:
+  group: abc-optimizer.innoventestech.com
+  names:
+    kind: Colony
+    listKind: ColonyList
+    plural: colonies
+    singular: colony
+  scope: Namespaced
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        description: Colony is the Schema for the colonies API
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: ColonySpec defines the desired state of Colony
+            properties:
+              employee_bee_image:
+                type: string
+              foodsource_image:
+                type: string
+              foodsource_num:
+                format: int32
+                type: integer
+              max_trial_count:
+                format: int32
+                type: integer
+              number_of_cycles:
+                format: int32
+                type: integer
+              onlooker_bee_image:
+                type: string
+              template:
+                description: Foo is an example field of Colony. Edit colony_types.go
+                  to remove/update EmployeeBees     int32             `json:"employee_bee_num,omitempty"`
+                  OnlookerBees     int32             `json:"onlooker_bee_num,omitempty"`
+                type: object
+            type: object
+          status:
+            description: ColonyStatus defines the observed state of Colony
+            properties:
+              completedEmployeeCycleStatus:
+                additionalProperties:
+                  type: string
+                type: object
+              completedEmployeeCycles:
+                description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
+                  of cluster Important: Run "make" to regenerate code after modifying
+                  this file AvailableReplicas      int32             `json:"availableReplicas"`'
+                format: int32
+                type: integer
+              completedOnlookerCycleStatus:
+                additionalProperties:
+                  type: string
+                type: object
+              completedOnlookerCycles:
+                format: int32
+                type: integer
+              foodsources:
+                additionalProperties:
+                  properties:
+                    employee_bee:
+                      type: string
+                    fs_vector:
+                      items:
+                        format: int32
+                        type: integer
+                      type: array
+                    objective_function:
+                      type: string
+                    occupied_by:
+                      type: string
+                    onlooker_bee:
+                      type: string
+                    reserved_by:
+                      type: string
+                    trial_count:
+                      format: int32
+                      type: integer
+                  type: object
+                type: object
+              saved_fs_vector:
+                items:
+                  properties:
+                    employee_bee:
+                      type: string
+                    fs_vector:
+                      items:
+                        format: int32
+                        type: integer
+                      type: array
+                    objective_function:
+                      type: string
+                    occupied_by:
+                      type: string
+                    onlooker_bee:
+                      type: string
+                    reserved_by:
+                      type: string
+                    trial_count:
+                      format: int32
+                      type: integer
+                  type: object
+                type: array
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+status:
+  acceptedNames:
+    kind: ""
+    plural: ""
+  conditions: []
+  storedVersions: []
