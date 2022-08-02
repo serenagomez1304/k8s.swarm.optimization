@@ -4,9 +4,11 @@ FROM python:3.8-slim-buster
 
 WORKDIR /app
 
-COPY onlooker-app.py ./
+COPY onlooker.py ./
+COPY logr.py ./
+COPY sample_app.py ./
 
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir kubernetes
 
-CMD ["python", "./onlooker-app.py"]
+CMD ["python", "./onlooker.py"]

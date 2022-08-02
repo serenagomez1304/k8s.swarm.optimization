@@ -297,7 +297,11 @@ func (r *ColonyReconciler) employeeBeeController(ctx context.Context, reqLogger 
 
 		reqLogger.Info("Before Update:" + fmt.Sprint(instance.Status))
 		// patch := client.MergeFrom(instance.DeepCopy())
-		r.Client.Status().Update(ctx, instance)
+
+		if err := r.Client.Status().Update(ctx, instance); err != nil {
+			reqLogger.Error(err, "failed to update Employee Bee Deployment resource")
+			return ctrl.Result{}, err
+		}
 
 		// r.Client.Status().Update(ctx, instance)
 		reqLogger.Info("279: Deleting employee deploymnet")
@@ -404,7 +408,11 @@ func (r *ColonyReconciler) onlookerBeeController(ctx context.Context, reqLogger 
 
 		reqLogger.Info("Before Update:" + fmt.Sprint(instance.Status))
 		// patch := client.MergeFrom(instance.DeepCopy())
-		r.Client.Status().Update(ctx, instance)
+
+		if err := r.Client.Status().Update(ctx, instance); err != nil {
+			reqLogger.Error(err, "failed to update Onlooker Bee Deployment resource")
+			return ctrl.Result{}, err
+		}
 
 		// patch := client.MergeFrom(instance.DeepCopy())
 		// r.Status().Update(ctx, instance)
