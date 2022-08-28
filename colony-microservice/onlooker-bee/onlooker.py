@@ -1,10 +1,8 @@
-from datetime import datetime
 import time
 import os
 
 import random
 
-from pprint import pprint
 from kubernetes.client.rest import ApiException
 
 from kubernetes import client, config
@@ -195,7 +193,7 @@ class OnlookerBee:
 	def rewrite_foodsources(self, foodsources):
 		for id, value in foodsources.items():
 			if 'fs_vector' not in value:
-				value['fs_vector'] = [-1,-1,-1]
+				value['fs_vector'] = [int(random.randrange(1,10)), int(random.randrange(1,10)), int(random.randrange(1,10))]
 			if 'trial_count' not in value:
 				value['trial_count'] = 0
 			if 'employee_bee' not in value:
@@ -207,7 +205,7 @@ class OnlookerBee:
 			if 'reserved_by' not in value:
 				value['reserved_by'] = ""
 			if 'objective_function' not in value:
-				value['objective_function'] = str(0.0)
+				value['objective_function'] = str(sample_app.Application.evaluate_obj_func(value['fs_vector']))
 			else:
 				value['objective_function'] = str(value['objective_function'])
 			foodsources[id] = value
@@ -262,7 +260,8 @@ class OnlookerBee:
 		logr.logr_info("cleanup_employees: "+str(self.foodsources))
 
 		for id, _ in self.foodsources.items():
-			self.foodsources[id]['employee_bee'] = ""
+			if self.foodsources[id]['occupied_by'] == "":
+				self.foodsources[id]['employee_bee'] = ""
 		patch_body = {
 			"status": {
 				"foodsources": self.foodsources
@@ -316,6 +315,7 @@ class OnlookerBee:
 			# randomly increment trial count
 
 			self.foodsources = self.get_foodsources()
+			self.rewrite_foodsources(self.foodsources)
 			if self.foodsources != None:
 				break
 

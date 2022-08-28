@@ -19,6 +19,8 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"reflect"
+	"time"
 
 	abcoptimizerv1 "abc-optimizer/api/v1"
 
@@ -36,20 +38,10 @@ import (
 	core "k8s.io/api/core/v1"
 )
 
-const (
-	employeeBeeName          = "employee-bee"
-	employeeBeeContainerName = "employee-bee-container"
-	onlookerBeeName          = "onlooker-bee"
-	onlookerBeeContainerName = "onlooker-bee-container"
-	foodsourceName           = "foodsource"
-	foodsourceContainerName  = "foodsource-container"
-)
-
 // ColonyReconciler reconciles a Colony object
 type ColonyReconciler struct {
 	client.Client
-	Log logr.Logger
-	// Log      *zap.Logger
+	Log      logr.Logger
 	Recorder record.EventRecorder
 	Scheme   *runtime.Scheme
 }
@@ -71,8 +63,9 @@ type ColonyReconciler struct {
 func (r *ColonyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	reqLogger := log.FromContext(ctx)
 	reqLogger.Info("Reconciling on Colony resource")
-	instance := &abcoptimizerv1.Colony{}
-	err := r.Get(ctx, req.NamespacedName, instance)
+
+	colonyInstance := &abcoptimizerv1.Colony{}
+	err := r.Get(ctx, req.NamespacedName, colonyInstance)
 	if err != nil {
 		if errors.IsNotFound(err) {
 			reqLogger.Info("object already deleted")
@@ -81,6 +74,10 @@ func (r *ColonyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 	} else {
 		reqLogger.Info("Namespace: " + req.Namespace + "Name: " + req.Name)
 	}
+
+	instance := colonyInstance.DeepCopy()
+
+	reqLogger.Info("reconciling: " + fmt.Sprint(instance))
 
 	if err := r.cleanupOwnedResources(ctx, reqLogger, instance); err != nil {
 		reqLogger.Error(err, "failed to clean up old Deployment resources for this Colony")
@@ -119,12 +116,25 @@ func (r *ColonyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 			}
 		}
 
+		// Foodsource
+		foodsourceDeployment := apps.Deployment{}
+		err = r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: foodsourceName}, &foodsourceDeployment)
+		if errors.IsNotFound(err) {
+			reqLogger.Info("could not find existing Foodsource Deployment for Colony")
+		} else {
+			reqLogger.Info("116: Deleting foodsource deploymnet")
+			if err := r.Client.Delete(ctx, &foodsourceDeployment, &client.DeleteOptions{}); err != nil {
+				reqLogger.Error(err, "failed to delete Foodsource Deployment resource")
+				return ctrl.Result{}, err
+			}
+		}
+
 		return ctrl.Result{}, nil
 	}
 
 	// Foodsource
 
-	if result, err := r.foodsourceController(ctx, reqLogger, instance); err != nil {
+	if result, err := r.foodsourceController(ctx, reqLogger, instance, req); err != nil {
 		reqLogger.Error(err, "failed to create foodsource deployment")
 		return result, err
 	}
@@ -143,285 +153,42 @@ func (r *ColonyReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctr
 		return result, err
 	}
 
-	// reqLogger.Info("updating Colony resource status for Food Source")
-	// instance.Status.AvailableReplicas = foodSourceDeployment.Status.AvailableReplicas
-	// if r.Client.Status().Update(ctx, instance); err != nil {
-	// 	reqLogger.Error(err, "failed to update Colony status for Food Source")
-	// 	return ctrl.Result{}, err
-	// }
-
-	// instance.Status.Cycles += 1
-
 	reqLogger.Info("resource status synced")
 
-	return ctrl.Result{}, nil
-}
-
-func (r *ColonyReconciler) foodsourceController(ctx context.Context, reqLogger logr.Logger, instance *abcoptimizerv1.Colony) (ctrl.Result, error) {
-	reqLogger.Info("checking if an existing Food Source Deployment exists for this Colony")
-	foodSourceDeployment := apps.Deployment{}
-	err := r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: foodsourceName}, &foodSourceDeployment)
-	if errors.IsNotFound(err) {
-		reqLogger.Info("could not find existing Food Source Deployment for Colony, creating one...")
-
-		foodSourceDeployment = *buildFoodSourceDeployment(*instance)
-		if err := r.Client.Create(ctx, &foodSourceDeployment); err != nil {
-			reqLogger.Error(err, "failed to create Food Source Deployment resource")
-			return ctrl.Result{}, err
-		}
-
-		r.Recorder.Eventf(instance, core.EventTypeNormal, "Created", "Created Food Source deployment %q", foodSourceDeployment.Name)
-		reqLogger.Info("created Food Source Deployment resource for Colony")
-		return ctrl.Result{}, nil
-	}
-	if err != nil {
-		reqLogger.Error(err, "failed to get Food Source Deployment for Colony resource")
-		return ctrl.Result{}, err
-	}
-
-	reqLogger.Info("existing Food Source Deployment resource already exists for Colony, checking replica count")
-
-	expectedFoodSource := int32(1)
-
-	if *foodSourceDeployment.Spec.Replicas != expectedFoodSource {
-		reqLogger.Info("updating replica count", "old_count", *foodSourceDeployment.Spec.Replicas, "new_count", expectedFoodSource)
-
-		foodSourceDeployment.Spec.Replicas = &expectedFoodSource
-		if err := r.Client.Update(ctx, &foodSourceDeployment); err != nil {
-			reqLogger.Error(err, "failed to Food Source Deployment update replica count")
-			return ctrl.Result{}, err
-		}
-
-		r.Recorder.Eventf(instance, core.EventTypeNormal, "Scaled", "Scaled Food Source deployment %q to %d replicas", foodSourceDeployment.Name, expectedFoodSource)
-
-		return ctrl.Result{}, nil
-	}
-
-	reqLogger.Info("replica count up to date", "replica_count", *foodSourceDeployment.Spec.Replicas)
-	return ctrl.Result{}, nil
-}
-
-func (r *ColonyReconciler) employeeBeeController(ctx context.Context, reqLogger logr.Logger, instance *abcoptimizerv1.Colony) (ctrl.Result, error) {
-	reqLogger.Info("checking if an existing Employee Bee Deployment exists for this Colony")
-	employeeBeeDeployment := apps.Deployment{}
-	err := r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: employeeBeeName}, &employeeBeeDeployment)
-	if errors.IsNotFound(err) {
-		reqLogger.Info("could not find existing Employee Bee Deployment for Colony, creating one...")
-
-		employeeBeeDeployment = *buildEmployeeBeeDeployment(*instance)
-		if err := r.Client.Create(ctx, &employeeBeeDeployment); err != nil {
-			reqLogger.Error(err, "failed to create Employee Bee Deployment resource")
-			return ctrl.Result{}, err
-		}
-
-		r.Recorder.Eventf(instance, core.EventTypeNormal, "Created", "Created Employee Bee deployment %q", employeeBeeDeployment.Name)
-		reqLogger.Info("created Employee Bee Deployment resource for Colony")
-		return ctrl.Result{}, nil
-	}
-	if err != nil {
-		reqLogger.Error(err, "failed to get Employee Bee Deployment for Colony resource")
-		return ctrl.Result{}, err
-	}
-
-	reqLogger.Info("existing Employee Bee Deployment resource already exists forColony, checking replica count")
-
-	expectedEmployeeColonys := instance.Spec.FoodSourceNumber
-
-	if *employeeBeeDeployment.Spec.Replicas != expectedEmployeeColonys {
-		reqLogger.Info("updating replica count", "old_count", *employeeBeeDeployment.Spec.Replicas, "new_count", expectedEmployeeColonys)
-
-		employeeBeeDeployment.Spec.Replicas = &expectedEmployeeColonys
-		if err := r.Client.Update(ctx, &employeeBeeDeployment); err != nil {
-			reqLogger.Error(err, "failed to update Employee Bee Deployment replica count")
-			return ctrl.Result{}, err
-		}
-
-		r.Recorder.Eventf(instance, core.EventTypeNormal, "Scaled", "Scaled Employee Bee deployment %q to %d replicas", employeeBeeDeployment.Name, expectedEmployeeColonys)
-
-		return ctrl.Result{}, nil
-	}
-
-	reqLogger.Info("replica count up to date", "replica_count", *employeeBeeDeployment.Spec.Replicas)
-
-	employeeBeeStatus := instance.Status.EmployeeBeeCycleStatus
-	reqLogger.Info(fmt.Sprint(employeeBeeStatus))
-
-	emp_done_count := 0
-
-	for pod, value := range employeeBeeStatus {
-		employeeBeePod := core.Pod{}
-		err = r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: pod}, &employeeBeePod)
-		if errors.IsNotFound(err) {
-			reqLogger.Info("could not find existing Employee Bee Pod for Colony")
-		}
+	if !reflect.DeepEqual(instance.Status, colonyInstance.Status) {
+		reqLogger.Info("Colony status before update: " + fmt.Sprint(instance.Status))
+		tempInstance := &abcoptimizerv1.Colony{}
+		err = r.Client.Get(ctx, req.NamespacedName, tempInstance)
 		if err != nil {
-			reqLogger.Info("failed to get Employee Bee Pod for Colony resource")
-			continue
+			if errors.IsNotFound(err) {
+				reqLogger.Info("object already deleted")
+				return ctrl.Result{}, nil
+			}
 		}
-		if employeeBeePod.Status.Phase == "Running" && value == "Done" {
-			emp_done_count += 1
-		}
-	}
-
-	if emp_done_count >= int(instance.Spec.FoodSourceNumber) {
-		reqLogger.Info("Re-Initializing Employees in the Colony")
-		// for pod, value := range employeeBeeStatus {
-		// 	employeeBeePod := core.Pod{}
-		// 	err = r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: pod}, &employeeBeePod)
-		// 	if errors.IsNotFound(err) {
-		// 		reqLogger.Info("could not find existing Employee Bee Pod for Colony")
-		// 		delete(instance.Status.EmployeeBeeCycleStatus, pod)
-		// 	}
-		// 	if err != nil {
-		// 		reqLogger.Info("failed to get Employee Bee Pod for Colony resource")
-		// 		delete(instance.Status.EmployeeBeeCycleStatus, pod)
-		// 		continue
-		// 	}
-		// 	if employeeBeePod.Status.Phase == "Running" && value == "Done" {
-		// 		// instance.Status.EmployeeBeeCycleStatus = map[string]string{pod: "Terminating"}
-		// 		delete(instance.Status.EmployeeBeeCycleStatus, pod)
-		// 	}
-		// }
-
-		instance.Status.EmployeeBeeCycleStatus = map[string]string{}
-		instance.Status.EmployeeBeeCycles += 1
-
-		for i, foodsource := range instance.Status.FoodSources {
-			foodsource.EmployeeBee = ""
-			instance.Status.FoodSources[string(i)] = foodsource
-		}
-
-		// patch_instance := &abcoptimizerv1.Colony{}
-		// patch_instance.Status.EmployeeBeeCycleStatus = map[string]string{}
-		// patch_instance.Status.EmployeeBeeCycles = instance.Status.EmployeeBeeCycles + 1
-
-		reqLogger.Info("Before Update:" + fmt.Sprint(instance.Status))
-		// patch := client.MergeFrom(instance.DeepCopy())
-
 		if err := r.Client.Status().Update(ctx, instance); err != nil {
-			reqLogger.Error(err, "failed to update Employee Bee Deployment resource")
+			reqLogger.Error(err, "failed to update colony status")
 			return ctrl.Result{}, err
 		}
 
-		// r.Client.Status().Update(ctx, instance)
-		reqLogger.Info("279: Deleting employee deploymnet")
-		if err := r.Client.Delete(ctx, &employeeBeeDeployment, &client.DeleteOptions{}); err != nil {
-			reqLogger.Error(err, "failed to delete Employee Bee Deployment resource")
-			return ctrl.Result{}, err
-		}
-	}
-	return ctrl.Result{}, nil
-}
-
-func (r *ColonyReconciler) onlookerBeeController(ctx context.Context, reqLogger logr.Logger, instance *abcoptimizerv1.Colony) (ctrl.Result, error) {
-	reqLogger.Info("checking if an existing Onlooker Bee Deployment exists for this Colony")
-	onlookerBeeDeployment := apps.Deployment{}
-	err := r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: onlookerBeeName}, &onlookerBeeDeployment)
-	if errors.IsNotFound(err) {
-		reqLogger.Info("could not find existing Onlooker Bee Deployment for Colony, creating one...")
-
-		onlookerBeeDeployment = *buildOnlookerBeeDeployment(*instance)
-		if err := r.Client.Create(ctx, &onlookerBeeDeployment); err != nil {
-			reqLogger.Error(err, "failed to create Onlooker Bee Deployment resource")
-			return ctrl.Result{}, err
-		}
-
-		r.Recorder.Eventf(instance, core.EventTypeNormal, "Created", "Created Onlooker Bee deployment %q", onlookerBeeDeployment.Name)
-		reqLogger.Info("created Onlooker Bee Deployment resource for Colony")
-		return ctrl.Result{}, nil
-	}
-	if err != nil {
-		reqLogger.Error(err, "failed to get Onlooker Bee Deployment for Colony resource")
-		return ctrl.Result{}, err
-	}
-
-	reqLogger.Info("existing Onlooker Bee Deployment resource already exists forColony, checking replica count")
-
-	expectedOnlookerColonys := instance.Spec.FoodSourceNumber
-
-	if *onlookerBeeDeployment.Spec.Replicas != expectedOnlookerColonys {
-		reqLogger.Info("updating replica count", "old_count", *onlookerBeeDeployment.Spec.Replicas, "new_count", expectedOnlookerColonys)
-
-		onlookerBeeDeployment.Spec.Replicas = &expectedOnlookerColonys
-		if err := r.Client.Update(ctx, &onlookerBeeDeployment); err != nil {
-			reqLogger.Error(err, "failed to update Onlooker Bee Deployment replica count")
-			return ctrl.Result{}, err
-		}
-
-		r.Recorder.Eventf(instance, core.EventTypeNormal, "Scaled", "Scaled Onlooker Bee deployment %q to %d replicas", onlookerBeeDeployment.Name, expectedOnlookerColonys)
-
-		return ctrl.Result{}, nil
-	}
-
-	reqLogger.Info("replica count up to date", "replica_count", *onlookerBeeDeployment.Spec.Replicas)
-
-	onlookerBeeStatus := instance.Status.OnlookerBeeCycleStatus
-	reqLogger.Info(fmt.Sprint(onlookerBeeStatus))
-
-	emp_done_count := 0
-
-	for pod, value := range onlookerBeeStatus {
-		onlookerBeePod := core.Pod{}
-		err = r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: pod}, &onlookerBeePod)
-		if errors.IsNotFound(err) {
-			reqLogger.Info("could not find existing Onlooker Bee Pod for Colony")
-		}
-		if err != nil {
-			reqLogger.Info("failed to get Onlooker Bee Pod for Colony resource")
-			continue
-		}
-		if onlookerBeePod.Status.Phase == "Running" && value == "Done" {
-			emp_done_count += 1
+		for count := 1; count < 20; count++ {
+			tempInstance := &abcoptimizerv1.Colony{}
+			err = r.Client.Get(ctx, req.NamespacedName, tempInstance)
+			if err != nil {
+				if errors.IsNotFound(err) {
+					reqLogger.Info("object already deleted")
+					return ctrl.Result{}, nil
+				}
+			} else {
+				reqLogger.Info("Namespace: " + req.Namespace + "Name: " + req.Name)
+			}
+			reqLogger.Info(fmt.Sprint(count) + ": Colony status after update: " + fmt.Sprint(tempInstance.Status))
+			if reflect.DeepEqual(instance.Status, tempInstance.Status) {
+				break
+			}
+			time.Sleep(2 * time.Second)
 		}
 	}
 
-	if emp_done_count >= int(instance.Spec.FoodSourceNumber) {
-		reqLogger.Info("Re-Initializing Onlookers in the Colony")
-		// for pod, value := range onlookerBeeStatus {
-		// 	onlookerBeePod := core.Pod{}
-		// 	err = r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: pod}, &onlookerBeePod)
-		// 	if errors.IsNotFound(err) {
-		// 		reqLogger.Info("could not find existing Onlooker Bee Pod for Colony")
-		// 		delete(instance.Status.OnlookerBeeCycleStatus, pod)
-		// 	}
-		// 	if err != nil {
-		// 		reqLogger.Info("failed to get Onlooker Bee Pod for Colony resource")
-		// 		delete(instance.Status.OnlookerBeeCycleStatus, pod)
-		// 		continue
-		// 	}
-		// 	if onlookerBeePod.Status.Phase == "Running" && value == "Done" {
-		// 		// instance.Status.OnlookerBeeCycleStatus = map[string]string{pod: "Terminating"}
-		// 		delete(instance.Status.OnlookerBeeCycleStatus, pod)
-		// 	}
-		// }
-		instance.Status.OnlookerBeeCycleStatus = map[string]string{}
-		instance.Status.OnlookerBeeCycles += 1
-
-		for i, foodsource := range instance.Status.FoodSources {
-			foodsource.OnlookerBee = ""
-			instance.Status.FoodSources[string(i)] = foodsource
-		}
-
-		// patch_instance := &abcoptimizerv1.Colony{}
-		// patch_instance.Status.OnlookerBeeCycleStatus = map[string]string{}
-		// patch_instance.Status.OnlookerBeeCycles = instance.Status.OnlookerBeeCycles + 1
-
-		reqLogger.Info("Before Update:" + fmt.Sprint(instance.Status))
-		// patch := client.MergeFrom(instance.DeepCopy())
-
-		if err := r.Client.Status().Update(ctx, instance); err != nil {
-			reqLogger.Error(err, "failed to update Onlooker Bee Deployment resource")
-			return ctrl.Result{}, err
-		}
-
-		// patch := client.MergeFrom(instance.DeepCopy())
-		// r.Status().Update(ctx, instance)
-		reqLogger.Info("411: Deleting onlooker deploymnet")
-		if err := r.Client.Delete(ctx, &onlookerBeeDeployment, &client.DeleteOptions{}); err != nil {
-			reqLogger.Error(err, "failed to delete Onlooker Bee Deployment resource")
-			return ctrl.Result{}, err
-		}
-	}
 	return ctrl.Result{}, nil
 }
 
@@ -455,227 +222,6 @@ func (r *ColonyReconciler) cleanupOwnedResources(ctx context.Context, log logr.L
 	log.Info("finished cleaning up old Colonys", "number_deleted", deleted)
 
 	return nil
-}
-
-func buildEmployeeBeeDeployment(Colony abcoptimizerv1.Colony) *apps.Deployment {
-	labels := map[string]string{
-		"app":        Colony.Name,
-		"controller": Colony.Name,
-	}
-	deployment := apps.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            employeeBeeName,
-			Namespace:       Colony.Namespace,
-			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(&Colony, abcoptimizerv1.GroupVersion.WithKind("Colony"))},
-		},
-		Spec: apps.DeploymentSpec{
-			Replicas: &Colony.Spec.FoodSourceNumber,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: core.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: core.PodSpec{
-					Volumes: []core.Volume{
-						{
-							Name: "log-volume",
-							// VolumeSource: core.VolumeSource{
-							// 	PersistentVolumeClaim: &core.PersistentVolumeClaimVolumeSource{
-							// 		ClaimName: "colony-pvc",
-							// 	},
-							// },
-							VolumeSource: core.VolumeSource{
-								HostPath: &core.HostPathVolumeSource{
-									Path: "/mycolony",
-								},
-							},
-						},
-					},
-					Containers: []core.Container{
-						{
-							Name:  employeeBeeContainerName,
-							Image: Colony.Spec.EmployeeBeeImage,
-							// Args:  []string{"/bin/sh", "-c", "test -e /var/log && rm -rf /var/log/..?* /var/log/.[!.]* /var/log/*  && test -z \"$(ls -A /var/log)\" || exit 1"},
-							Env: []core.EnvVar{
-								{
-									Name: "BEE_NAME",
-									ValueFrom: &core.EnvVarSource{
-										FieldRef: &core.ObjectFieldSelector{
-											FieldPath: "metadata.name",
-										},
-									},
-								},
-								{
-									Name: "BEE_NAMESPACE",
-									ValueFrom: &core.EnvVarSource{
-										FieldRef: &core.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
-										},
-									},
-								},
-							},
-							VolumeMounts: []core.VolumeMount{
-								{
-									Name:      "log-volume",
-									MountPath: "/var/log/mycolony",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	return &deployment
-}
-
-func buildOnlookerBeeDeployment(Colony abcoptimizerv1.Colony) *apps.Deployment {
-	labels := map[string]string{
-		"app":        Colony.Name,
-		"controller": Colony.Name,
-	}
-	deployment := apps.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            onlookerBeeName,
-			Namespace:       Colony.Namespace,
-			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(&Colony, abcoptimizerv1.GroupVersion.WithKind("Colony"))},
-		},
-		Spec: apps.DeploymentSpec{
-			Replicas: &Colony.Spec.FoodSourceNumber,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: core.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: core.PodSpec{
-					Volumes: []core.Volume{
-						{
-							Name: "log-volume",
-							// VolumeSource: core.VolumeSource{
-							// 	PersistentVolumeClaim: &core.PersistentVolumeClaimVolumeSource{
-							// 		ClaimName: "colony-pvc",
-							// 	},
-							// },
-							VolumeSource: core.VolumeSource{
-								HostPath: &core.HostPathVolumeSource{
-									Path: "/mycolony",
-								},
-							},
-						},
-					},
-					Containers: []core.Container{
-						{
-							Name:  onlookerBeeContainerName,
-							Image: Colony.Spec.OnlookerBeeImage,
-							Env: []core.EnvVar{
-								{
-									Name: "BEE_NAME",
-									ValueFrom: &core.EnvVarSource{
-										FieldRef: &core.ObjectFieldSelector{
-											FieldPath: "metadata.name",
-										},
-									},
-								},
-								{
-									Name: "BEE_NAMESPACE",
-									ValueFrom: &core.EnvVarSource{
-										FieldRef: &core.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
-										},
-									},
-								},
-							},
-							VolumeMounts: []core.VolumeMount{
-								{
-									Name:      "log-volume",
-									MountPath: "/var/log/mycolony",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	return &deployment
-}
-
-func buildFoodSourceDeployment(Colony abcoptimizerv1.Colony) *apps.Deployment {
-	labels := map[string]string{
-		"app":        Colony.Name,
-		"controller": Colony.Name,
-	}
-	replica_count := int32(1)
-	deployment := apps.Deployment{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:            foodsourceName,
-			Namespace:       Colony.Namespace,
-			OwnerReferences: []metav1.OwnerReference{*metav1.NewControllerRef(&Colony, abcoptimizerv1.GroupVersion.WithKind("Colony"))},
-		},
-		Spec: apps.DeploymentSpec{
-			Replicas: &replica_count,
-			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
-			},
-			Template: core.PodTemplateSpec{
-				ObjectMeta: metav1.ObjectMeta{
-					Labels: labels,
-				},
-				Spec: core.PodSpec{
-					Volumes: []core.Volume{
-						{
-							Name: "log-volume",
-							// VolumeSource: core.VolumeSource{
-							// 	PersistentVolumeClaim: &core.PersistentVolumeClaimVolumeSource{
-							// 		ClaimName: "colony-pvc",
-							// 	},
-							// },
-							VolumeSource: core.VolumeSource{
-								HostPath: &core.HostPathVolumeSource{
-									Path: "/mycolony",
-								},
-							},
-						},
-					},
-					Containers: []core.Container{
-						{
-							Name:  foodsourceContainerName,
-							Image: Colony.Spec.FoodSourceImage,
-							Env: []core.EnvVar{
-								{
-									Name: "BEE_NAME",
-									ValueFrom: &core.EnvVarSource{
-										FieldRef: &core.ObjectFieldSelector{
-											FieldPath: "metadata.name",
-										},
-									},
-								},
-								{
-									Name: "BEE_NAMESPACE",
-									ValueFrom: &core.EnvVarSource{
-										FieldRef: &core.ObjectFieldSelector{
-											FieldPath: "metadata.namespace",
-										},
-									},
-								},
-							},
-							VolumeMounts: []core.VolumeMount{
-								{
-									Name:      "log-volume",
-									MountPath: "/var/log/mycolony",
-								},
-							},
-						},
-					},
-				},
-			},
-		},
-	}
-	return &deployment
 }
 
 var (
