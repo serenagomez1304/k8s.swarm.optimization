@@ -42,6 +42,13 @@ spec:
               foodsource_num:
                 format: int32
                 type: integer
+              fs_vec_len:
+                format: int32
+                type: integer
+              lower:
+                items:
+                  type: string
+                type: array
               max_trial_count:
                 format: int32
                 type: integer
@@ -55,14 +62,16 @@ spec:
                   to remove/update EmployeeBees     int32             `json:"employee_bee_num,omitempty"`
                   OnlookerBees     int32             `json:"onlooker_bee_num,omitempty"`
                 type: object
+              upper:
+                items:
+                  type: string
+                type: array
             type: object
           status:
             description: ColonyStatus defines the observed state of Colony
             properties:
               completedEmployeeCycleStatus:
-                additionalProperties:
-                  type: string
-                type: object
+                type: string
               completedEmployeeCycles:
                 description: 'INSERT ADDITIONAL STATUS FIELD - define observed state
                   of cluster Important: Run "make" to regenerate code after modifying
@@ -70,27 +79,47 @@ spec:
                 format: int32
                 type: integer
               completedOnlookerCycleStatus:
-                additionalProperties:
-                  type: string
-                type: object
+                type: string
               completedOnlookerCycles:
                 format: int32
                 type: integer
+              dead_bees:
+                items:
+                  type: string
+                type: array
+              empBeeStatus:
+                additionalProperties:
+                  properties:
+                    bee_fs_trial_count:
+                      format: int32
+                      type: integer
+                    bee_fs_vector:
+                      items:
+                        type: string
+                      type: array
+                    bee_obj_func_status:
+                      type: boolean
+                    bee_objective_function:
+                      type: string
+                    bee_status:
+                      description: BeeName              string   `json:"bee_name,omitempty"`
+                      type: string
+                    foodsource_id:
+                      type: string
+                  type: object
+                type: object
               foodsources:
                 additionalProperties:
                   properties:
-                    employee_bee:
-                      type: string
                     fs_vector:
                       items:
-                        format: int32
-                        type: integer
+                        type: string
                       type: array
                     objective_function:
                       type: string
                     occupied_by:
-                      type: string
-                    onlooker_bee:
+                      description: EmployeeBee       string   `json:"employee_bee,omitempty"`
+                        OnlookerBee       string   `json:"onlooker_bee,omitempty"`
                       type: string
                     reserved_by:
                       type: string
@@ -99,21 +128,43 @@ spec:
                       type: integer
                   type: object
                 type: object
+              onlBeeStatus:
+                additionalProperties:
+                  properties:
+                    bee_fs_trial_count:
+                      format: int32
+                      type: integer
+                    bee_fs_vector:
+                      items:
+                        type: string
+                      type: array
+                    bee_obj_func_status:
+                      type: boolean
+                    bee_objective_function:
+                      type: string
+                    bee_status:
+                      description: BeeName              string   `json:"bee_name,omitempty"`
+                      type: string
+                    foodsource_id:
+                      type: string
+                  type: object
+                type: object
+              probabilityMap:
+                additionalProperties:
+                  type: string
+                type: object
               saved_fs_vector:
                 items:
                   properties:
-                    employee_bee:
-                      type: string
                     fs_vector:
                       items:
-                        format: int32
-                        type: integer
+                        type: string
                       type: array
                     objective_function:
                       type: string
                     occupied_by:
-                      type: string
-                    onlooker_bee:
+                      description: EmployeeBee       string   `json:"employee_bee,omitempty"`
+                        OnlookerBee       string   `json:"onlooker_bee,omitempty"`
                       type: string
                     reserved_by:
                       type: string

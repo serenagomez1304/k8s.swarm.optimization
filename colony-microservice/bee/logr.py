@@ -1,7 +1,6 @@
 
 # importing module
 import logging
-import employee
 from datetime import datetime
 import os
 
@@ -9,7 +8,7 @@ bee = str(os.getenv("BEE_NAME"))
 print("BEE_NAME: " + bee)
 
 # Create and configure logger
-logging.basicConfig(filename="/var/log/mycolony/emp"+str(datetime.now())+".log",
+logging.basicConfig(filename="/var/log/mycolony/"+str(datetime.now())+bee+".log",
                     format='%(asctime)s %(message)s',
                     filemode='w')
  

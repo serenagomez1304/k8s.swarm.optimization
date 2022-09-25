@@ -5,10 +5,12 @@ metadata:
 spec:
   # employee_bee_num: 5
   # onlooker_bee_num: 5
-  number_of_cycles: 10
-  employee_bee_image: "serenagomez/employee-bee-v1"
-  onlooker_bee_image: "serenagomez/onlooker-bee-v1"
+  number_of_cycles: 50
+  employee_bee_image: "serenagomez/linear-bee"
+  onlooker_bee_image: "serenagomez/linear-bee"
   foodsource_image: "serenagomez/food-source-v1"
   max_trial_count: 5
   foodsource_num: 3
-  
+  fs_vec_len: 3
+  upper: ['1', '1', '1']
+  lower: ['0', '0', '0']
