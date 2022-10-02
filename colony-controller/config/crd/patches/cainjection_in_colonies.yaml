@@ -4,4 +4,4 @@ kind: CustomResourceDefinition
 metadata:
   annotations:
     cert-manager.io/inject-ca-from: $(CERTIFICATE_NAMESPACE)/$(CERTIFICATE_NAME)
-  name: colonies.abc-optimizer.innoventestech.com
+  name: colonies.abc-optimizer.pesu.edu

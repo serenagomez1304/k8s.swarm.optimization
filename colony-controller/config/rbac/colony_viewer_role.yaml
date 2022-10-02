@@ -5,7 +5,7 @@ metadata:
   name: colony-viewer-role
 rules:
 - apiGroups:
-  - abc-optimizer.innoventestech.com
+  - abc-optimizer.pesu.edu
   resources:
   - colonies
   verbs:
@@ -13,7 +13,7 @@ rules:
   - list
   - watch
 - apiGroups:
-  - abc-optimizer.innoventestech.com
+  - abc-optimizer.pesu.edu
   resources:
   - colonies/status
   verbs:

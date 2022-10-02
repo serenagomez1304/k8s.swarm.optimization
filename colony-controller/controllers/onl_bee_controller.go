@@ -24,20 +24,25 @@ const (
 )
 
 func (r *ColonyReconciler) onlookerBeeController(ctx context.Context, reqLogger logr.Logger, instance *abcoptimizerv1.Colony) (ctrl.Result, error) {
-	reqLogger.Info("checking if an existing Onlooker Bee Deployment exists for this Colony")
+
+	reqLogger.V(4).Info("EBC:-------------------------------------- ------------------------------------------")
+	reqLogger.V(4).Info("EPC: Onlooker Bee Controller")
+	reqLogger.V(4).Info("EBC:-------------------------------------- ------------------------------------------")
+
+	reqLogger.V(8).Info("OBC:checking if an existing Onlooker Bee Deployment exists for this Colony")
 
 	// 1. check existence and update onlooker-bee deployment in colony
 	onlookerBeeDeployment := apps.Deployment{}
 	result, err := r.deployOnlookerBees(ctx, &onlookerBeeDeployment, instance, reqLogger)
 	if err != nil {
-		reqLogger.Info("onlookerBeeController: error in onlooker bee deployment")
+		reqLogger.V(8).Info("OBC:onlookerBeeController: error in onlooker bee deployment")
 		return result, err
 	}
 
 	// 2. Get onlooker pod list
 	onlPodList, err := r.getOnlPodList(ctx, instance, reqLogger)
 	if err != nil {
-		reqLogger.Info("onlookerBeeController: pods not found")
+		reqLogger.V(4).Info("OBC:onlookerBeeController: pods not found")
 		return ctrl.Result{}, nil
 	}
 
@@ -47,7 +52,7 @@ func (r *ColonyReconciler) onlookerBeeController(ctx context.Context, reqLogger 
 	}
 
 	// 4. register bee and generate new fs vector when cycle is new
-	reqLogger.Info("onlookerBeeController: cycle status: " + fmt.Sprint(instance.Status.OnlookerBeeCycleStatus) + ", foodsource len: " + fmt.Sprint(len(instance.Status.FoodSources["0"].Foodsource)))
+	reqLogger.V(5).Info("OBC:onlookerBeeController: cycle status: " + fmt.Sprint(instance.Status.OnlookerBeeCycleStatus) + ", foodsource len: " + fmt.Sprint(len(instance.Status.FoodSources["0"].Foodsource)))
 	if instance.Status.OnlookerBeeCycleStatus == "Started" && len(instance.Status.FoodSources["0"].Foodsource) != 0 {
 
 		// if enitre map not generated, wait until complete
@@ -56,34 +61,38 @@ func (r *ColonyReconciler) onlookerBeeController(ctx context.Context, reqLogger 
 		}
 		result, err = r.registerAndAssignOnlooker(ctx, instance, onlPodList, reqLogger)
 		if err != nil {
-			reqLogger.Info("onlookerBeeController: error in registering bee to foodsource")
+			reqLogger.V(4).Info("OBC:onlookerBeeController: error in registering bee to foodsource")
 			return result, err
 		}
+		reqLogger.V(5).Info("OBC:onlookerBeeController: cycle-status: Started " + onlStatusToString(instance.Status.OnlookerBees))
+
 		// all foodsources need to be filled before entering here ???
 		result, err = generateNewOnlFsVector(instance, reqLogger)
 		if err != nil {
-			reqLogger.Info("onlookerBeeController: error in generating new fs vector")
+			reqLogger.V(4).Info("OBC:onlookerBeeController: error in generating new fs vector")
 			return result, err
 		}
-		reqLogger.Info("onlookerBeeController: bee: " + fmt.Sprint(instance.Status.OnlookerBees))
+		reqLogger.V(7).Info("OBC:onlookerBeeController: bee: " + onlFoodSourceDataToString(instance.Status.OnlookerBees))
 	}
 
 	// 5. reassign
 	if instance.Status.OnlookerBeeCycleStatus == "InProgress" {
 		result, err := r.reassignOnlBeeStatus(ctx, instance, reqLogger)
 		if err != nil {
-			reqLogger.Info("onlookerBeeController: error in reassigning bee to foodsource")
+			reqLogger.V(4).Info("OBC:onlookerBeeController: error in reassigning bee to foodsource")
 			return result, err
 		}
+		reqLogger.V(5).Info("OBC:onlookerBeeController:  cycle-status: InProgress: " + onlStatusToString(instance.Status.OnlookerBees))
 	}
 
 	// 6. update fs vector
 	if instance.Status.OnlookerBeeCycleStatus == "Completed" {
-		result, err := onlUpdateFoodsources(instance, reqLogger)
+		result, err := updateOnlFoodsources(instance, reqLogger)
 		if err != nil {
-			reqLogger.Info("onlookerBeeController: error in updating fs vector")
+			reqLogger.V(4).Info("OBC:onlookerBeeController: error in updating fs vector")
 			return result, err
 		}
+		reqLogger.V(5).Info("OBC:onlookerBeeController: cycle-status: Completed: " + onlStatusToString(instance.Status.OnlookerBees))
 	}
 
 	// 7. end of onlooker cycle
@@ -91,6 +100,7 @@ func (r *ColonyReconciler) onlookerBeeController(ctx context.Context, reqLogger 
 	if err != nil {
 		return result, err
 	}
+	reqLogger.V(5).Info("OBC:onlookerBeeController:  endOfOnlCycle: " + onlStatusToString(instance.Status.OnlookerBees))
 
 	return ctrl.Result{}, nil
 }
@@ -101,7 +111,7 @@ func (r *ColonyReconciler) getOnlPodList(ctx context.Context, instance *abcoptim
 	if err != nil {
 		return []core.Pod{}, err
 	}
-	reqLogger.Info("getOnlPodList: pod list: " + fmt.Sprint(onlookerBeeList.Items))
+	reqLogger.V(8).Info("OBC:getOnlPodList: pod list: " + fmt.Sprint(onlookerBeeList.Items))
 	onlookerList := onlookerBeeList.Items
 	returnList := []core.Pod{}
 	for _, bee := range onlookerList {
@@ -113,8 +123,10 @@ func (r *ColonyReconciler) getOnlPodList(ctx context.Context, instance *abcoptim
 }
 
 func initOnlookerBees(instance *abcoptimizerv1.Colony, onlookerList []core.Pod, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("initOnlookerBees: enter")
+	reqLogger.V(8).Info("OBC:initOnlookerBees: enter")
 	// 1. if all bees have not been created, wait
+	reqLogger.V(10).Info("OBC:initOnlookerBees: number of onlooker pods: " + fmt.Sprint(len(onlookerList)))
+
 	onlBeeStatus := map[string]abcoptimizerv1.BeeStatus{}
 	for _, bee := range onlookerList {
 		if slices.Contains(instance.Status.DeadBees, bee.GetName()) {
@@ -131,7 +143,7 @@ func initOnlookerBees(instance *abcoptimizerv1.Colony, onlookerList []core.Pod, 
 	}
 
 	if len(onlBeeStatus) < int(instance.Spec.FoodSourceNumber) {
-		reqLogger.Info("initOnlookerBees: exit with warning")
+		reqLogger.V(8).Info("OBC:initOnlookerBees: exit with warning")
 		return ctrl.Result{}, nil
 	}
 
@@ -139,23 +151,23 @@ func initOnlookerBees(instance *abcoptimizerv1.Colony, onlookerList []core.Pod, 
 	instance.Status.OnlookerBees = onlBeeStatus
 	instance.Status.OnlookerBeeCycleStatus = "Started"
 
-	reqLogger.Info("initEmployeeBees: onlooker bees: " + empLogString(instance.Status.OnlookerBees))
-	reqLogger.Info("initOnlookerBees: exit")
+	reqLogger.V(5).Info("OBC:initEmployeeBees: onlooker bees: " + onlStatusToString(instance.Status.EmployeeBees))
+	reqLogger.V(8).Info("OBC:initOnlookerBees: exit")
 	return ctrl.Result{}, nil
 }
 
 func (r *ColonyReconciler) registerAndAssignOnlooker(ctx context.Context, instance *abcoptimizerv1.Colony, onlookerList []core.Pod, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("registerAndAssignOnlooker: enter")
+	reqLogger.V(8).Info("OBC:registerAndAssignOnlooker: enter")
 	// 1. if all bees have not been created, wait
 	if len(onlookerList) < int(instance.Spec.FoodSourceNumber) {
 		return ctrl.Result{}, nil
 	}
 
 	// 2. register and assign foodsource to bee
-	reqLogger.Info("registerAndAssignOnlooker: register ans assign foodsource to bee")
+	reqLogger.V(8).Info("OBC:registerAndAssignOnlooker: register ans assign foodsource to bee")
 	instance.Status.OnlookerBeeCycleStatus = "InProgress"
 	for _, bee := range onlookerList {
-		reqLogger.Info("registerAndAssignOnlooker: iterating: " + bee.GetName())
+		reqLogger.V(8).Info("OBC:registerAndAssignOnlooker: iterating: " + bee.GetName())
 		if instance.Status.OnlookerBees[bee.GetName()].Status == "New" {
 			availableId, availableFoodsource, err := onlFindAvailableFoodsource(instance, reqLogger)
 			for len(availableId) == 0 {
@@ -177,15 +189,16 @@ func (r *ColonyReconciler) registerAndAssignOnlooker(ctx context.Context, instan
 			onlStatus.FoodsourceTrialCount = availableFoodsource.TrialCount
 			onlStatus.ObjFuncStatus = false
 			instance.Status.OnlookerBees[bee.GetName()] = onlStatus
-			reqLogger.Info("registerAndAssignOnlooker: update colony status : " + fmt.Sprint(onlStatus))
+			reqLogger.V(7).Info("OBC:registerAndAssignOnlooker: update colony status : " + fmt.Sprint(onlStatus))
 		}
 	}
-	reqLogger.Info("registerAndAssignOnlooker: exit")
+	reqLogger.V(5).Info("OBC:registerAndAssignOnlooker: registering: " + onlStatusToString(instance.Status.EmployeeBees))
+	reqLogger.V(8).Info("OBC:registerAndAssignOnlooker: exit")
 	return ctrl.Result{}, nil
 }
 
 func (r *ColonyReconciler) reassignOnlBeeStatus(ctx context.Context, instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("reassignOnlBeeStatus: enter")
+	reqLogger.V(8).Info("OBC:reassignOnlBeeStatus: enter")
 	// rassign bee status
 	for bee, value := range instance.Status.OnlookerBees {
 		// if bee waiting, bee reserved fs, fs occupied by none
@@ -200,15 +213,15 @@ func (r *ColonyReconciler) reassignOnlBeeStatus(ctx context.Context, instance *a
 		}
 		instance.Status.OnlookerBees[bee] = value
 	}
-	reqLogger.Info("reassignOnlBeeStatus: status: " + onlLogString(instance.Status.OnlookerBees))
-	reqLogger.Info("reassignOnlBeeStatus: exit")
+	reqLogger.V(5).Info("OBC:reassignOnlBeeStatus: status: " + onlStatusToString(instance.Status.OnlookerBees))
+	reqLogger.V(8).Info("OBC:reassignOnlBeeStatus: exit")
 	return ctrl.Result{}, nil
 }
 
 func onlFindAvailableFoodsource(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (string, abcoptimizerv1.FoodsourceStatus, error) {
-	reqLogger.Info("onlFindAvailableFoodsource: enter")
+	reqLogger.V(8).Info("OBC:onlFindAvailableFoodsource: enter")
 	if !checkFs(instance, reqLogger) {
-		reqLogger.Info("onlFindAvailableFoodsource: foodsource vector is empty")
+		reqLogger.V(7).Info("OBC:onlFindAvailableFoodsource: foodsource vector is empty")
 	}
 	foodsources := instance.Status.FoodSources
 	probabilityMap := instance.Status.ProbabilityMap
@@ -219,34 +232,38 @@ func onlFindAvailableFoodsource(instance *abcoptimizerv1.Colony, reqLogger logr.
 		randomVal := rand.Float32()
 		probability, err := strconv.ParseFloat(probabilityMap[id], 32)
 		if err != nil {
-			reqLogger.Info("onlFindAvailableFoodsource: cannot conert probability map value to float")
+			reqLogger.V(4).Info("OBC:onlFindAvailableFoodsource: cannot conert probability map value to float")
 			return "", abcoptimizerv1.FoodsourceStatus{}, err
 		}
 		if randomVal < float32(probability) {
-			reqLogger.Info("onlFindAvailableFoodsource: exit")
+			reqLogger.V(8).Info("OBC:onlFindAvailableFoodsource: exit")
 			return id, value, nil
 		}
 	}
-	reqLogger.Info("onlFindAvailableFoodsource: exit with error")
+	reqLogger.V(8).Info("OBC:onlFindAvailableFoodsource: exit with error")
 	return "", abcoptimizerv1.FoodsourceStatus{}, fmt.Errorf("all foodsources occupied/reserved by onlooker")
 }
 
 func generateNewOnlFsVector(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("generateNewOnlFsVector: enter")
-	reqLogger.Info("generateNewOnlFsVector: instance status: " + onlFsLogString(instance.Status.OnlookerBees))
+	reqLogger.V(8).Info("OBC:generateNewOnlFsVector: enter")
+	reqLogger.V(7).Info("OBC:generateNewOnlFsVector: instance status: " + onlFoodSourceDataToString(instance.Status.OnlookerBees))
+	if !checkFs(instance, reqLogger) {
+		reqLogger.V(8).Info("EBC:generateNewOnlFsVector: foodsource vector is empty")
+	}
+
 	for bee, value := range instance.Status.OnlookerBees {
 		id := value.FoodsourceId
 		if id == "" {
 			continue
 		}
 		currentVector := instance.Status.FoodSources[id].Foodsource
-		reqLogger.Info("food source vector for " + id + " : " + fmt.Sprint(currentVector))
+		reqLogger.V(7).Info("OBC:food source vector for " + id + " : " + fmt.Sprint(currentVector))
 		partnerId := fmt.Sprint(rand.Intn(int(instance.Spec.FoodSourceNumber))) // TODO: cannot be equal to current id ??
 		for partnerId == id {
 			partnerId = fmt.Sprint(rand.Intn(int(instance.Spec.FoodSourceNumber)))
 		}
 		partnerVector := instance.Status.FoodSources[partnerId].Foodsource
-		reqLogger.Info("partner vector for " + partnerId + " : " + fmt.Sprint(partnerVector))
+		reqLogger.V(7).Info("OBC:partner vector for " + partnerId + " : " + fmt.Sprint(partnerVector))
 		j := rand.Intn(int(instance.Spec.FoodsourceVectorLength))
 		max := float32(1)
 		min := float32(-1)
@@ -259,7 +276,7 @@ func generateNewOnlFsVector(instance *abcoptimizerv1.Colony, reqLogger logr.Logg
 		}
 		partnerPosVal, err := strconv.ParseFloat(partnerVector[j], 32)
 		if err != nil {
-			reqLogger.Info("generateNewOnlFsVector: failed to convert partner vector to float")
+			reqLogger.V(4).Info("OBC:generateNewOnlFsVector: failed to convert partner vector to float")
 			return ctrl.Result{}, err
 		}
 		newVector[j] = fmt.Sprint(float32(curPosVal) + phi*(float32(curPosVal)-float32(partnerPosVal)))
@@ -272,15 +289,15 @@ func generateNewOnlFsVector(instance *abcoptimizerv1.Colony, reqLogger logr.Logg
 		onlookerBeeStatus.Status = value.Status
 		instance.Status.OnlookerBees[bee] = *onlookerBeeStatus
 		// value.FoodsourceVector = newVector
-		reqLogger.Info("generateNewOnlFsVector: Fs Vector " + id + ": " + fmt.Sprint(instance.Status.OnlookerBees[bee].FoodsourceVector))
+		reqLogger.V(7).Info("OBC:generateNewOnlFsVector: Fs Vector " + id + ": " + fmt.Sprint(instance.Status.OnlookerBees[bee].FoodsourceVector))
 	}
-	reqLogger.Info("generateNewOnlFsVector: fs " + fmt.Sprint(instance.Status.OnlookerBees))
-	reqLogger.Info("generateNewOnlFsVector: exit")
+	reqLogger.V(7).Info("OBC:generateNewOnlFsVector: fs " + fmt.Sprint(instance.Status.OnlookerBees))
+	reqLogger.V(8).Info("OBC:generateNewOnlFsVector: exit")
 	return ctrl.Result{}, nil
 }
 
 func (r *ColonyReconciler) endOfOnlCycle(ctx context.Context, instance *abcoptimizerv1.Colony, onlookerBeeDeployment *apps.Deployment, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("endOfOnlCycle: enter")
+	reqLogger.V(8).Info("OBC:endOfOnlCycle: enter")
 	onlookerBees := instance.Status.OnlookerBees
 
 	doneCount := 0
@@ -289,13 +306,13 @@ func (r *ColonyReconciler) endOfOnlCycle(ctx context.Context, instance *abcoptim
 		onlookerBeePod := core.Pod{}
 		err := r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: bee}, &onlookerBeePod)
 		if errors.IsNotFound(err) {
-			reqLogger.Info("endOfOnlCycle: could not find existing Onlooker Bee Pod for Colony")
+			reqLogger.V(4).Info("OBC:endOfOnlCycle: could not find existing Onlooker Bee Pod for Colony")
 			value.Status = "Done"
 			doneCount += 1
 			continue
 		}
 		if err != nil {
-			reqLogger.Info("endOfOnlCycle: failed to get Onlooker Bee Pod for Colony resource")
+			reqLogger.V(4).Info("OBC:endOfOnlCycle: failed to get Onlooker Bee Pod for Colony resource")
 			value.Status = "Done"
 			doneCount += 1
 			continue
@@ -306,48 +323,49 @@ func (r *ColonyReconciler) endOfOnlCycle(ctx context.Context, instance *abcoptim
 	}
 
 	if doneCount >= int(instance.Spec.FoodSourceNumber) {
-		reqLogger.Info("endOfOnlCycle: Re-Initializing Onlookers in the Colony")
+		reqLogger.V(8).Info("OBC:endOfOnlCycle: Re-Initializing Onlookers in the Colony")
 
 		instance.Status.OnlookerBeeCycles += 1
 
-		reqLogger.Info("endOfOnlCycle: Attempting to delete onlooker-bee deploymnet")
+		reqLogger.V(8).Info("OBC:endOfOnlCycle: Attempting to delete onlooker-bee deployment")
 		onlookerBeeDeployment := apps.Deployment{}
 		err := r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: onlookerBeeName}, &onlookerBeeDeployment)
 		if errors.IsNotFound(err) {
-			reqLogger.Info("endOfOnlCycle: could not find existing Onlooker Bee Deployment for Colony")
+			reqLogger.V(4).Info("OBC:endOfOnlCycle: could not find existing Onlooker Bee Deployment for Colony")
 		} else {
-			reqLogger.Info("endOfOnlCycle: Deleting onloooker-bee deploymnet")
+			reqLogger.V(8).Info("OBC:endOfOnlCycle: Deleting onloooker-bee deployment")
 			if err := r.Client.Delete(ctx, &onlookerBeeDeployment, &client.DeleteOptions{}); err != nil {
-				reqLogger.Error(err, "failed to delete Onlooker Bee Deployment resource")
+				reqLogger.Error(err, "OBC:failed to delete Onlooker Bee Deployment resource")
 				return ctrl.Result{}, err
 			}
 		}
 
-		// reqLogger.Info("endOfOnlCycle: Deleting onlooker deploymnet")
+		// reqLogger.V(X).Info("OBC:endOfOnlCycle: Deleting onlooker deployment")
 		// if err := r.Client.Delete(ctx, onlookerBeeDeployment, &client.DeleteOptions{}); err != nil {
-		// 	reqLogger.Error(err, "endOfOnlCycle: failed to delete Onlooker Bee Deployment resource")
+		// 	reqLogger.Error(err, "OBC:endOfOnlCycle: failed to delete Onlooker Bee Deployment resource")
 		// 	return ctrl.Result{}, err
 		// }
 		instance.Status.OnlookerBeeCycleStatus = "Completed"
 	}
-	reqLogger.Info("endOfOnlCycle: exit")
+	reqLogger.V(8).Info("OBC:endOfOnlCycle: exit")
 	return ctrl.Result{}, nil
 }
 
-func onlUpdateFoodsources(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
+func updateOnlFoodsources(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
+	reqLogger.V(8).Info("OBC:updateOnlFoodsources: enter")
 	for bee, value := range instance.Status.OnlookerBees {
 		if len(value.ObjectiveFunction) == 0 {
 			continue
 		}
 		newObjFunc, err := strconv.ParseFloat(value.ObjectiveFunction, 32)
 		if err != nil {
-			reqLogger.Error(err, "onlUpdateFoodsources: cannot convert new obj func to int")
+			reqLogger.Error(err, "OBC:updateOnlFoodsources: cannot convert new obj func to int")
 			return ctrl.Result{}, err
 		}
 		newFitness := evaluateFitness(float32(newObjFunc))
 		curObjFunc, err := strconv.ParseFloat(instance.Status.FoodSources[value.FoodsourceId].ObjectiveFunction, 32)
 		if err != nil {
-			reqLogger.Error(err, "onlUpdateFoodsources: cannot convert cur obj func to int")
+			reqLogger.Error(err, "OBC:updateOnlFoodsources: cannot convert cur obj func to int")
 			return ctrl.Result{}, err
 		}
 		curFitness := evaluateFitness(float32(curObjFunc))
@@ -357,53 +375,62 @@ func onlUpdateFoodsources(instance *abcoptimizerv1.Colony, reqLogger logr.Logger
 		if newFitness >= curFitness {
 			onlookerBeeStatus.FoodsourceTrialCount = 0
 			onlookerBeeStatus.ObjectiveFunction = fmt.Sprint(newObjFunc)
+			reqLogger.V(8).Info("OBC:updateOnlFoodsources: updated to new the foodsource vector; ObjectiveFunction = " + fmt.Sprint(newObjFunc))
 		} else {
 			onlookerBeeStatus.FoodsourceVector = instance.Status.FoodSources[value.FoodsourceId].Foodsource
 			onlookerBeeStatus.FoodsourceTrialCount = onlookerBeeStatus.FoodsourceTrialCount + 1
+			reqLogger.V(8).Info("OBC:updateOnlFoodsources: retain old foodsource vector, trialcount updated to " + fmt.Sprint(onlookerBeeStatus.FoodsourceTrialCount))
 		}
 		instance.Status.OnlookerBees[bee] = *onlookerBeeStatus
 	}
+	reqLogger.V(8).Info("OBC:updateOnlFoodsources: exit")
 	return ctrl.Result{}, nil
 }
 
 func (r *ColonyReconciler) deployOnlookerBees(ctx context.Context, onlookerBeeDeployment *apps.Deployment, instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
+	reqLogger.V(8).Info("OBC:deployOnlookerBees: enter")
+
 	err := r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: onlookerBeeName}, onlookerBeeDeployment)
 	if errors.IsNotFound(err) {
-		reqLogger.Info("could not find existing Onlooker Bee Deployment for Colony, creating one...")
+		reqLogger.V(4).Info("OBC:could not find existing Onlooker Bee Deployment for Colony, creating one...")
 
 		onlookerBeeDeployment = buildOnlookerBeeDeployment(*instance)
 		if err := r.Client.Create(ctx, onlookerBeeDeployment); err != nil {
-			reqLogger.Error(err, "failed to create Onlooker Bee Deployment resource")
+			reqLogger.Error(err, "OBC:deployOnlookerBees: failed to create Onlooker Bee Deployment resource")
 			return ctrl.Result{}, err
 		}
 
 		r.Recorder.Eventf(instance, core.EventTypeNormal, "Created", "Created Onlooker Bee deployment %q", onlookerBeeDeployment.Name)
-		reqLogger.Info("created Onlooker Bee Deployment resource for Colony")
+		reqLogger.V(8).Info("OBC:deployOnlookerBees: created Onlooker Bee Deployment resource for Colony")
+		reqLogger.V(8).Info("OBC:deployOnlookerBees: exit")
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
-		reqLogger.Error(err, "failed to get Onlooker Bee Deployment for Colony resource")
+		reqLogger.Error(err, "OBC:deployOnlookerBees: failed to get Onlooker Bee Deployment for Colony resource")
+		reqLogger.V(8).Info("OBC:deployOnlookerBees: exit")
 		return ctrl.Result{}, err
 	}
-	reqLogger.Info("existing Onlooker Bee Deployment resource already exists for Colony, checking replica count")
+	reqLogger.V(8).Info("OBC:deployOnlookerBees: existing Onlooker Bee Deployment resource already exists for Colony, checking replica count")
 
 	expectedOnlookerColonys := instance.Spec.FoodSourceNumber
 
 	if *onlookerBeeDeployment.Spec.Replicas != expectedOnlookerColonys {
-		reqLogger.Info("updating replica count", "old_count", *onlookerBeeDeployment.Spec.Replicas, "new_count", expectedOnlookerColonys)
+		reqLogger.V(8).Info("OBC:deployOnlookerBees: updating replica count", "old_count", *onlookerBeeDeployment.Spec.Replicas, "new_count", expectedOnlookerColonys)
 
 		onlookerBeeDeployment.Spec.Replicas = &expectedOnlookerColonys
 		if err := r.Client.Update(ctx, onlookerBeeDeployment); err != nil {
-			reqLogger.Error(err, "failed to update Onlooker Bee Deployment replica count")
+			reqLogger.Error(err, "OBC:deployOnlookerBees: failed to update Onlooker Bee Deployment replica count")
 			return ctrl.Result{}, err
 		}
 
 		r.Recorder.Eventf(instance, core.EventTypeNormal, "Scaled", "Scaled Onlooker Bee deployment %q to %d replicas", onlookerBeeDeployment.Name, expectedOnlookerColonys)
 
+		reqLogger.V(8).Info("OBC:deployOnlookerBees: exit")
 		return ctrl.Result{}, nil
 	}
 
-	reqLogger.Info("replica count up to date", "replica_count", *onlookerBeeDeployment.Spec.Replicas)
+	reqLogger.V(8).Info("OBC:replica count up to date", "replica_count", *onlookerBeeDeployment.Spec.Replicas)
+	reqLogger.V(8).Info("OBC:deployOnlookerBees: exit")
 	return ctrl.Result{}, nil
 }
 
@@ -484,8 +511,30 @@ func onlLogString(beeStatus map[string]abcoptimizerv1.BeeStatus) string {
 	return onlLogStatus
 }
 
-func onlFsLogString(beeStatus map[string]abcoptimizerv1.BeeStatus) string {
+func onlStatusToString(beeStatus map[string]abcoptimizerv1.BeeStatus) string {
 	onlLogStatus := ""
+
+	onlLogStatus += "onl:["
+	for bee, status := range beeStatus {
+		onlLogStatus += fmt.Sprint(bee, ": ", status.Status, ", ")
+	}
+	return onlLogStatus
+}
+
+func onlObjectiveFunctionStatusToString(beeStatus map[string]abcoptimizerv1.BeeStatus) string {
+	onlLogStatus := ""
+
+	onlLogStatus += "onl:["
+	for bee, status := range beeStatus {
+		onlLogStatus += fmt.Sprint(bee, ": ", status.ObjFuncStatus, ", ")
+	}
+	return onlLogStatus
+}
+
+func onlFoodSourceDataToString(beeStatus map[string]abcoptimizerv1.BeeStatus) string {
+	onlLogStatus := ""
+
+	onlLogStatus += "onl:["
 	for bee, status := range beeStatus {
 		onlLogStatus += fmt.Sprint(bee, ": ", status.FoodsourceVector, ", ", status.FoodsourceTrialCount, "; ")
 	}

@@ -1,4 +1,4 @@
-apiVersion: abc-optimizer.innoventestech.com/v1
+apiVersion: abc-optimizer.pesu.edu/v1
 kind: Colony
 metadata:
   name: colony-sample

@@ -18,7 +18,7 @@ class Bee:
 			logr.logr_info("patch_bee_status: patch body")
 			logr.logr_info(str(patch_body))
 			api_response = api.patch_namespaced_custom_object_status(
-				group="abc-optimizer.innoventestech.com",
+				group="abc-optimizer.pesu.edu",
 				version="v1",
 				name="colony-sample",
 				namespace="default",
@@ -35,7 +35,7 @@ class Bee:
 		api = client.CustomObjectsApi()
 		try:
 			api_response = api.get_namespaced_custom_object_status(
-				group="abc-optimizer.innoventestech.com",
+				group="abc-optimizer.pesu.edu",
 				version="v1",
 				name="colony-sample",
 				namespace="default",

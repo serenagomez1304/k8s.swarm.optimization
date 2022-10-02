@@ -8,4 +8,4 @@ webhook:
   port: 9443
 leaderElection:
   leaderElect: true
-  resourceName: 1362af49.innoventestech.com
+  resourceName: 1362af49.pesu.edu

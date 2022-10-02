@@ -27,78 +27,90 @@ const (
 // }
 
 func (r *ColonyReconciler) foodsourceController(ctx context.Context, reqLogger logr.Logger, instance *abcoptimizerv1.Colony, req ctrl.Request) (ctrl.Result, error) {
-	reqLogger.Info("foodsourceController: checking if an existing Food Source Deployment exists for this Colony")
+
+	reqLogger.V(4).Info("FSX:-------------------------------------- ------------------------------------------")
+	reqLogger.V(4).Info("FSX: Foodsource controller")
+	reqLogger.V(4).Info("FSX:-------------------------------------- ------------------------------------------")
+
+	reqLogger.V(8).Info("FSX:foodsourceController: checking if an existing Food Source Deployment exists for this Colony")
 
 	// 1. Initialize foodsource status in colony
 	if len(instance.Status.FoodSources) == 0 {
 		_, err := r.initFoodsource(ctx, reqLogger, instance)
 		if err != nil {
-			reqLogger.Error(err, "foodsourceController: foodsource initialization failed")
+			reqLogger.Error(err, "FSX:foodsourceController: foodsource initialization failed")
 		}
+		reqLogger.V(6).Info("FSX:foodsourceController: initialize Foodsource: " + fsStatusToString(instance.Status.FoodSources))
 	}
 
 	// 2. check existence and update foodsource deployment in colony
 	foodSourceDeployment := apps.Deployment{}
 	err := r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: foodsourceName}, &foodSourceDeployment)
 	if errors.IsNotFound(err) {
-		reqLogger.Info("foodsourceController: could not find existing Food Source Deployment for Colony, creating one...")
+		reqLogger.V(4).Info("FSX:foodsourceController: could not find existing Food Source Deployment for Colony, creating one...")
 
 		foodSourceDeployment = *buildFoodSourceDeployment(*instance)
 		if err := r.Client.Create(ctx, &foodSourceDeployment); err != nil {
-			reqLogger.Error(err, "foodsourceController: failed to create Food Source Deployment resource")
+			reqLogger.Error(err, "FSX:foodsourceController: failed to create Food Source Deployment resource")
 			return ctrl.Result{}, err
 		}
 
 		r.Recorder.Eventf(instance, core.EventTypeNormal, "Created", "Created Food Source deployment %q", foodSourceDeployment.Name)
-		reqLogger.Info("foodsourceController: created Food Source Deployment resource for Colony")
+		reqLogger.V(8).Info("FSX:foodsourceController: created Food Source Deployment resource for Colony")
 	}
 	// if err != nil {
 	// 	reqLogger.Error(err, "failed to get Food Source Deployment for Colony resource")
 	// 	return ctrl.Result{}, err
 	// }
 
-	reqLogger.Info("foodsourceController: existing Food Source Deployment resource already exists for Colony, checking replica count")
+	reqLogger.V(8).Info("FSX:foodsourceController: existing Food Source Deployment resource already exists for Colony, checking replica count")
 
 	if instance.Status.EmployeeBeeCycleStatus == "Started" || instance.Status.OnlookerBeeCycleStatus == "Started" {
 		result, err := generateProbabilityMap(instance, reqLogger)
 		if err != nil {
-			reqLogger.Info("foodsourceController: error in generating probabilty map")
+			reqLogger.V(4).Info("FSX:foodsourceController: error in generating probabilty map")
 			return result, err
 		}
+		reqLogger.V(7).Info("FSX:foodsourceController: BeeCycleStatus == Started: " + fsDataToString(instance.Status.FoodSources))
 	}
 
 	// 3. reconcile in progress employee bee status with foodsource status
 	if instance.Status.EmployeeBeeCycleStatus == "InProgress" {
 		reconcileWithEmployeeInProgress(instance, reqLogger)
+		reqLogger.V(5).Info("FSX:foodsourceController: EmployeeBeeCycleStatus == InProgress: " + fsStatusToString(instance.Status.FoodSources))
 	}
 
 	// 4. reconcile completed employee bee status data with foodsource status data
 	if instance.Status.EmployeeBeeCycleStatus == "Completed" {
 		reconcileWithEmployeeCompleted(instance, reqLogger)
+		reqLogger.V(5).Info("FSX:foodsourceController: EmployeeBeeCycleStatus == Completed: " + fsStatusToString(instance.Status.FoodSources))
 	}
 
 	// 5. reconcile in progress onlooker bee status with foodsource status
 	if instance.Status.OnlookerBeeCycleStatus == "InProgress" {
 		reconcileWithOnlookerInProgress(instance, reqLogger)
+		reqLogger.V(5).Info("FSX:foodsourceController: OnlookerBeeCycleStatus == InProgress: " + fsStatusToString(instance.Status.FoodSources))
 	}
 
 	// 6. reconcile completed onlooker bee status data with foodsource status data
 	if instance.Status.OnlookerBeeCycleStatus == "Completed" {
 		reconcileWithOnlookerCompleted(instance, reqLogger)
+		reqLogger.V(5).Info("FSX:foodsourceController: OnlookerBeeCycleStatus == Completed: " + fsStatusToString(instance.Status.FoodSources))
 	}
 
-	reqLogger.Info("Foodsource instance status: " + fsLogString(instance.Status.FoodSources))
+	reqLogger.V(7).Info("FSX:Foodsource instance status: " + fsDataToString(instance.Status.FoodSources))
 
 	// 7. Save potential solution by comparing with max trial count in colony
 	_, err = r.saveSolution(ctx, instance, req, reqLogger)
 	if err != nil {
-		reqLogger.Error(err, "saveSolution failed")
+		reqLogger.Error(err, "FSX: saveSolution failed")
 	}
+	reqLogger.V(4).Info("FSX:-------------------------------------- ------------------------------------------")
 	return ctrl.Result{}, nil
 }
 
 func (r *ColonyReconciler) initFoodsource(ctx context.Context, reqLogger logr.Logger, instance *abcoptimizerv1.Colony) (ctrl.Result, error) {
-	reqLogger.Info("initFoodsource: start foodsource initialization")
+	reqLogger.V(8).Info("FSX:initFoodsource: start foodsource initialization")
 	// 1. Check length of upper and lower value vectors
 	if len(instance.Spec.UpperValues) != int(instance.Spec.FoodsourceVectorLength) || len(instance.Spec.LowerValues) != int(instance.Spec.FoodsourceVectorLength) {
 		return ctrl.Result{}, fmt.Errorf("initFoodsource: invalid colony spec: length of upper or lower vector")
@@ -106,7 +118,7 @@ func (r *ColonyReconciler) initFoodsource(ctx context.Context, reqLogger logr.Lo
 
 	// 2. Use upper and lower to generate random foodsource vector
 	// foodsourceStatus := new(map[string]abcoptimizerv1.FoodsourceStatus)
-	reqLogger.Info("initFoodsource: generate random foodsources")
+	reqLogger.V(8).Info("FSX:initFoodsource: generate random foodsources")
 	foodsourceStatus := map[string]abcoptimizerv1.FoodsourceStatus{}
 	for id := 0; id < int(instance.Spec.FoodSourceNumber); id++ {
 		fs_vector, err := newFsVector(instance, reqLogger)
@@ -125,25 +137,25 @@ func (r *ColonyReconciler) initFoodsource(ctx context.Context, reqLogger logr.Lo
 	instance.Status.FoodSources = foodsourceStatus
 
 	// 3. Saved foodsources = []
-	reqLogger.Info("initFoodsource: init saved foodsources")
+	reqLogger.V(8).Info("FSX:initFoodsource: init saved foodsources")
 	instance.Status.SavedFoodSources = []abcoptimizerv1.FoodsourceStatus{}
 
-	reqLogger.Info("initFoodsource: exit foodsource initialization")
+	reqLogger.V(8).Info("FSX:initFoodsource: exit foodsource initialization")
 	return ctrl.Result{}, nil
 }
 
 func generateProbabilityMap(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("generateProbabilityMap: enter")
+	reqLogger.V(8).Info("FSX:generateProbabilityMap: enter")
 	maxFit := float32(0)
 	fitMap := map[string]float32{}
 	for id, value := range instance.Status.FoodSources {
-		reqLogger.Info("generateProbabilityMap: value: " + fmt.Sprint(value))
+		reqLogger.V(7).Info("FSX:generateProbabilityMap: value: " + fmt.Sprint(value))
 		if value.ObjectiveFunction == "" {
 			continue
 		}
 		objFunc, err := strconv.ParseFloat(value.ObjectiveFunction, 32)
 		if err != nil {
-			reqLogger.Info("generateProbabilityMap: could not convert objective function value to float")
+			reqLogger.V(8).Info("FSX:generateProbabilityMap: could not convert objective function value to float")
 			return ctrl.Result{}, err
 		}
 		fit := evaluateFitness(float32(objFunc))
@@ -154,7 +166,7 @@ func generateProbabilityMap(instance *abcoptimizerv1.Colony, reqLogger logr.Logg
 	}
 
 	if len(fitMap) == 0 {
-		reqLogger.Info("generateProbabilityMap: exit, skip")
+		reqLogger.V(8).Info("FSX:generateProbabilityMap: exit, skip")
 		return ctrl.Result{}, nil
 	}
 
@@ -172,13 +184,13 @@ func generateProbabilityMap(instance *abcoptimizerv1.Colony, reqLogger logr.Logg
 	}
 
 	instance.Status.ProbabilityMap = probabilityMap
-	reqLogger.V(4).Info("generateProbabilityMap: probability map: " + fmt.Sprint(instance.Status.ProbabilityMap))
-	reqLogger.Info("generateProbabilityMap: exit")
+	reqLogger.V(7).Info("generateProbabilityMap: probability map: " + fmt.Sprint(instance.Status.ProbabilityMap))
+	reqLogger.V(8).Info("FSX:generateProbabilityMap: exit")
 	return ctrl.Result{}, nil
 }
 
 func reconcileWithEmployeeInProgress(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("reconcileWithEmployeeInProgress: enter")
+	reqLogger.V(8).Info("FSX:reconcileWithEmployeeInProgress: enter")
 	for bee, value := range instance.Status.EmployeeBees {
 		newFoodsource := new(abcoptimizerv1.FoodsourceStatus)
 		newFoodsource.Foodsource = instance.Status.FoodSources[value.FoodsourceId].Foodsource
@@ -190,21 +202,21 @@ func reconcileWithEmployeeInProgress(instance *abcoptimizerv1.Colony, reqLogger 
 		switch value.Status {
 		case "New":
 			// dont copy to foodsource
-			reqLogger.Info("reconcileWithEmployeeInProgress: new, do nothing")
+			reqLogger.V(8).Info("FSX:reconcileWithEmployeeInProgress: new, do nothing")
 		case "Waiting":
 			// occupied by onlooker, reserve
-			reqLogger.Info("reconcileWithEmployeeInProgress: waiting for onlooker, " + bee + " reserving " + fmt.Sprint(value.FoodsourceId))
+			reqLogger.V(8).Info("FSX:reconcileWithEmployeeInProgress: waiting for onlooker, " + bee + " reserving " + fmt.Sprint(value.FoodsourceId))
 			newFoodsource.ReservedBy = bee
 		case "Running":
 			// occupy
-			reqLogger.Info("reconcileWithEmployeeInProgress: running, " + bee + " occupying " + fmt.Sprint(value.FoodsourceId))
+			reqLogger.V(8).Info("FSX:reconcileWithEmployeeInProgress: running, " + bee + " occupying " + fmt.Sprint(value.FoodsourceId))
 			newFoodsource.OccupiedBy = bee
 			if newFoodsource.ReservedBy == bee {
 				newFoodsource.ReservedBy = ""
 			}
 		case "Done":
 			// vacate
-			reqLogger.Info("reconcileWithEmployeeInProgress: done, vacate " + bee + " fs " + fmt.Sprint(value.FoodsourceId))
+			reqLogger.V(8).Info("FSX:reconcileWithEmployeeInProgress: done, vacate " + bee + " fs " + fmt.Sprint(value.FoodsourceId))
 			newFoodsource.Foodsource = value.FoodsourceVector
 			newFoodsource.ObjectiveFunction = value.ObjectiveFunction
 			newFoodsource.TrialCount = value.FoodsourceTrialCount
@@ -213,11 +225,11 @@ func reconcileWithEmployeeInProgress(instance *abcoptimizerv1.Colony, reqLogger 
 			}
 		}
 
-		reqLogger.Info("reconcileWithEmployeeInProgress: update colony status")
+		reqLogger.V(8).Info("FSX:reconcileWithEmployeeInProgress: update colony status")
 		instance.Status.FoodSources[value.FoodsourceId] = *newFoodsource
-		reqLogger.V(4).Info("reconcileWithEmployeeInProgress: fs status: " + fmt.Sprint(instance.Status.FoodSources))
+		reqLogger.V(7).Info("reconcileWithEmployeeInProgress: fs status: " + fmt.Sprint(instance.Status.FoodSources))
 	}
-	reqLogger.Info("reconcileWithEmployeeInProgress: exit")
+	reqLogger.V(8).Info("FSX:reconcileWithEmployeeInProgress: exit")
 	return ctrl.Result{}, nil
 }
 
@@ -230,11 +242,11 @@ func compareFitness(beeObj string, fsObj string, reqLogger logr.Logger) (bool, e
 	}
 	beeObjVal, err := strconv.ParseFloat(beeObj, 32)
 	if err != nil {
-		return false, fmt.Errorf("compareFitness: cannot convert beeObj value to float")
+		return false, fmt.Errorf("FSX:compareFitness: cannot convert beeObj value to float")
 	}
 	fsObjVal, err := strconv.ParseFloat(fsObj, 32)
 	if err != nil {
-		return false, fmt.Errorf("compareFitness: cannot convert fsObj value to float")
+		return false, fmt.Errorf("FSX:compareFitness: cannot convert fsObj value to float")
 	}
 	beeFit := evaluateFitness(float32(beeObjVal))
 	fsFit := evaluateFitness(float32(fsObjVal))
@@ -246,7 +258,7 @@ func compareFitness(beeObj string, fsObj string, reqLogger logr.Logger) (bool, e
 }
 
 func reconcileWithEmployeeCompleted(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("reconcileWithEmployeeCompleted: enter")
+	reqLogger.V(8).Info("FSX:reconcileWithEmployeeCompleted: enter")
 	for bee, value := range instance.Status.EmployeeBees {
 		newFoodsource := new(abcoptimizerv1.FoodsourceStatus)
 		newFoodsource.Foodsource = value.FoodsourceVector
@@ -260,12 +272,12 @@ func reconcileWithEmployeeCompleted(instance *abcoptimizerv1.Colony, reqLogger l
 	}
 	instance.Status.EmployeeBeeCycleStatus = ""
 	instance.Status.EmployeeBees = map[string]abcoptimizerv1.BeeStatus{}
-	reqLogger.Info("reconcileWithEmployeeCompleted: exit")
+	reqLogger.V(8).Info("FSX:reconcileWithEmployeeCompleted: exit")
 	return ctrl.Result{}, nil
 }
 
 func reconcileWithOnlookerInProgress(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("reconcileWithOnlookerInProgress: enter")
+	reqLogger.V(8).Info("FSX:reconcileWithOnlookerInProgress: enter")
 	for bee, value := range instance.Status.OnlookerBees {
 		newFoodsource := new(abcoptimizerv1.FoodsourceStatus)
 		newFoodsource.Foodsource = instance.Status.FoodSources[value.FoodsourceId].Foodsource
@@ -277,14 +289,14 @@ func reconcileWithOnlookerInProgress(instance *abcoptimizerv1.Colony, reqLogger 
 		switch value.Status {
 		case "New":
 			// dont copy to foodsource
-			reqLogger.Info("reconcileWithOnlookerInProgress: new, do nothing")
+			reqLogger.V(8).Info("FSX:reconcileWithOnlookerInProgress: new, do nothing")
 		case "Waiting":
 			// occupied by employee, reserve
-			reqLogger.Info("reconcileWithOnlookerInProgress: waiting for employee, " + bee + " reserving " + fmt.Sprint(value.FoodsourceId))
+			reqLogger.V(8).Info("FSX:reconcileWithOnlookerInProgress: waiting for employee, " + bee + " reserving " + fmt.Sprint(value.FoodsourceId))
 			newFoodsource.ReservedBy = bee
 		case "Running":
 			// occupy
-			reqLogger.Info("reconcileWithOnlookerInProgress: running, " + bee + " occupying " + fmt.Sprint(value.FoodsourceId))
+			reqLogger.V(8).Info("FSX:reconcileWithOnlookerInProgress: running, " + bee + " occupying " + fmt.Sprint(value.FoodsourceId))
 			newFoodsource.OccupiedBy = bee
 			if newFoodsource.ReservedBy == bee {
 				newFoodsource.ReservedBy = ""
@@ -293,7 +305,7 @@ func reconcileWithOnlookerInProgress(instance *abcoptimizerv1.Colony, reqLogger 
 		case "Done":
 			// TODO: if multiple onlooker bees work on same foodsoure, overwriting ???
 			// vacate and copy to foodsource
-			reqLogger.Info("reconcileWithOnlookerInProgress: done, vacate " + bee + " fs " + fmt.Sprint(value.FoodsourceId))
+			reqLogger.V(8).Info("FSX:reconcileWithOnlookerInProgress: done, vacate " + bee + " fs " + fmt.Sprint(value.FoodsourceId))
 			newFoodsource.Foodsource = value.FoodsourceVector
 			newFoodsource.ObjectiveFunction = value.ObjectiveFunction
 			newFoodsource.TrialCount = value.FoodsourceTrialCount
@@ -301,16 +313,16 @@ func reconcileWithOnlookerInProgress(instance *abcoptimizerv1.Colony, reqLogger 
 				newFoodsource.OccupiedBy = ""
 			}
 		}
-		reqLogger.Info("reconcileWithOnlookerInProgress: update colony status")
+		reqLogger.V(8).Info("FSX:reconcileWithOnlookerInProgress: update colony status")
 		instance.Status.FoodSources[value.FoodsourceId] = *newFoodsource
-		reqLogger.V(4).Info("reconcileWithOnlookerInProgress: fs status: " + fmt.Sprint(instance.Status.FoodSources))
+		reqLogger.V(7).Info("reconcileWithOnlookerInProgress: fs status: " + fmt.Sprint(instance.Status.FoodSources))
 	}
-	reqLogger.Info("reconcileWithOnlookerInProgress: exit")
+	reqLogger.V(8).Info("FSX:reconcileWithOnlookerInProgress: exit")
 	return ctrl.Result{}, nil
 }
 
 func reconcileWithOnlookerCompleted(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("reconcileWithOnlookerCompleted: enter")
+	reqLogger.V(8).Info("FSX:reconcileWithOnlookerCompleted: enter")
 	for bee, value := range instance.Status.OnlookerBees {
 		newFoodsource := new(abcoptimizerv1.FoodsourceStatus)
 		newFoodsource.Foodsource = instance.Status.FoodSources[value.FoodsourceId].Foodsource
@@ -321,8 +333,8 @@ func reconcileWithOnlookerCompleted(instance *abcoptimizerv1.Colony, reqLogger l
 
 		good, err := compareFitness(value.ObjectiveFunction, instance.Status.FoodSources[value.FoodsourceId].ObjectiveFunction, reqLogger)
 		if err != nil {
-			reqLogger.Info("reconcileWithOnlookerCompleted: error in comparing fitness, skipping")
-			reqLogger.Info(err.Error())
+			reqLogger.V(4).Info("FSX:reconcileWithOnlookerCompleted: error in comparing fitness, skipping")
+			reqLogger.V(4).Info(err.Error())
 			if newFoodsource.OccupiedBy == bee {
 				newFoodsource.OccupiedBy = ""
 			}
@@ -345,18 +357,18 @@ func reconcileWithOnlookerCompleted(instance *abcoptimizerv1.Colony, reqLogger l
 	}
 	instance.Status.OnlookerBeeCycleStatus = ""
 	instance.Status.OnlookerBees = map[string]abcoptimizerv1.BeeStatus{}
-	reqLogger.Info("reconcileWithOnlookerCompleted: exit")
+	reqLogger.V(8).Info("FSX:reconcileWithOnlookerCompleted: exit")
 	return ctrl.Result{}, nil
 }
 
 func (r *ColonyReconciler) saveSolution(ctx context.Context, instance *abcoptimizerv1.Colony, req ctrl.Request, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("saveSolution: enter")
+	reqLogger.V(8).Info("FSX:saveSolution: enter")
 
 	max_trial_count := instance.Spec.MaxTrialCount
 	for id, foodsource := range instance.Status.FoodSources {
 		if foodsource.TrialCount >= max_trial_count {
 			// append foodsource to saved foodsource
-			reqLogger.Info("saveSolution: saving foodsource, and reset")
+			reqLogger.V(8).Info("FSX:saveSolution: saving foodsource, and reset")
 			instance.Status.SavedFoodSources = append(instance.Status.SavedFoodSources, instance.Status.FoodSources[id])
 			fs_vector, err := newFsVector(instance, reqLogger)
 			if err != nil {
@@ -371,7 +383,7 @@ func (r *ColonyReconciler) saveSolution(ctx context.Context, instance *abcoptimi
 			instance.Status.FoodSources[string(id)] = *newFoodsource
 		}
 	}
-	reqLogger.Info("saveSolution: exit")
+	reqLogger.V(8).Info("FSX:saveSolution: exit")
 	return ctrl.Result{}, nil
 }
 
@@ -460,10 +472,20 @@ func buildFoodSourceDeployment(Colony abcoptimizerv1.Colony) *apps.Deployment {
 	return &deployment
 }
 
-func fsLogString(fsStatus map[string]abcoptimizerv1.FoodsourceStatus) string {
+
+func fsStatusToString(fsStatus map[string]abcoptimizerv1.FoodsourceStatus) string {
 	fsLogStatus := ""
 	for id, status := range fsStatus {
-		fsLogStatus += fmt.Sprint(id, ": {len: ", len(status.Foodsource), ", occupied: ", status.OccupiedBy, ", reserved: ", status.ReservedBy, ", trialCount: ", status.TrialCount, "}, ")
+		fsLogStatus += fmt.Sprint(id, ": {len: ", len(status.Foodsource), ", occupied: ", status.OccupiedBy, ", reserved: ", status.ReservedBy, "}, ")
+	}
+	return fsLogStatus
+}
+
+
+func fsDataToString(fsStatus map[string]abcoptimizerv1.FoodsourceStatus) string {
+	fsLogStatus := ""
+	for id, status := range fsStatus {
+		fsLogStatus += fmt.Sprint(id, ": {", status.Foodsource, ", trialCount: ", status.TrialCount, "}, ")
 	}
 	return fsLogStatus
 }

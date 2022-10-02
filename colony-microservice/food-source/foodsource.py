@@ -17,7 +17,7 @@ class Foodsource:
 				api = client.CustomObjectsApi()
 
 				api_response = api.get_namespaced_custom_object_status(
-					group="abc-optimizer.innoventestech.com",
+					group="abc-optimizer.pesu.edu",
 					version="v1",
 					name="colony-sample",
 					namespace="default",
@@ -39,7 +39,7 @@ class Foodsource:
 			api = client.CustomObjectsApi()
 
 			api_response = api.get_namespaced_custom_object_status(
-				group="abc-optimizer.innoventestech.com",
+				group="abc-optimizer.pesu.edu",
 				version="v1",
 				name="colony-sample",
 				namespace="default",
@@ -92,7 +92,7 @@ class Foodsource:
 		try:
 			api = client.CustomObjectsApi()
 			api_response = api.patch_namespaced_custom_object_status(
-					group="abc-optimizer.innoventestech.com",
+					group="abc-optimizer.pesu.edu",
 					version="v1",
 					name="colony-sample",
 					namespace="default",
@@ -144,7 +144,7 @@ class Foodsource:
 			api = client.CustomObjectsApi()
 
 			api_response = api.get_namespaced_custom_object_status(
-				group="abc-optimizer.innoventestech.com",
+				group="abc-optimizer.pesu.edu",
 				version="v1",
 				name="colony-sample",
 				namespace="default",

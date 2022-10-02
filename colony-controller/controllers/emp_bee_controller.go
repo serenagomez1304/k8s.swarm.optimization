@@ -24,21 +24,26 @@ const (
 )
 
 func (r *ColonyReconciler) employeeBeeController(ctx context.Context, reqLogger logr.Logger, instance *abcoptimizerv1.Colony) (ctrl.Result, error) {
-	reqLogger.Info("checking if an existing Employee Bee Deployment exists for this Colony")
+
+	reqLogger.V(4).Info("EBC:-------------------------------------- ------------------------------------------")
+	reqLogger.V(4).Info("EPC: Employee Bee Controller")
+	reqLogger.V(4).Info("EBC:-------------------------------------- ------------------------------------------")
+
+	reqLogger.V(8).Info("EBC:checking if an existing Employee Bee Deployment exists for this Colony")
 
 	// 1. check existence and update employee-bee deployment in colony
 
 	employeeBeeDeployment := apps.Deployment{}
 	result, err := r.deployEmployeeBees(ctx, &employeeBeeDeployment, instance, reqLogger)
 	if err != nil {
-		reqLogger.Info("employeeBeeController: error in employee bee deployment")
+		reqLogger.V(4).Info("EBC:employeeBeeController: error in employee bee deployment")
 		return result, err
 	}
 
 	// 2. Get employee pod list
 	empPodList, err := r.getEmpPodList(ctx, instance, reqLogger)
 	if err != nil {
-		reqLogger.Info("employeeBeeController: pods not found")
+		reqLogger.V(4).Info("EBC:employeeBeeController: pods not found")
 		return ctrl.Result{}, nil
 	}
 
@@ -51,44 +56,48 @@ func (r *ColonyReconciler) employeeBeeController(ctx context.Context, reqLogger 
 	if instance.Status.EmployeeBeeCycleStatus == "Started" && len(instance.Status.FoodSources["0"].Foodsource) != 0 {
 		result, err := r.registerAndAssign(ctx, instance, empPodList, reqLogger)
 		if err != nil {
-			reqLogger.Info("employeeBeeController: error in registering bee to foodsource")
+			reqLogger.V(4).Info("EBC:employeeBeeController: error in registering bee to foodsource")
 			return result, err
 		}
+		reqLogger.V(5).Info("EBC:employeeBeeController: cycle-status: Started " + empStatusToString(instance.Status.EmployeeBees))
+
 		// all foodsources need to be filled before entering here ?????
 		result, err = generateNewEmpFsVector(instance, reqLogger)
 		if err != nil {
-			reqLogger.Info("employeeBeeController: error in generating new fs vector")
+			reqLogger.V(4).Info("EBC:employeeBeeController: error in generating new fs vector")
 			return result, err
 		}
-		reqLogger.Info("employeeBeeController: bee: " + fmt.Sprint(instance.Status.EmployeeBees))
+		reqLogger.V(7).Info("EBC:employeeBeeController:  cycle-status: Started: " + empFoodSourceDataToString(instance.Status.EmployeeBees))
 	}
 
 	// 5. reassign
 	if instance.Status.EmployeeBeeCycleStatus == "InProgress" {
 		result, err := r.reassignEmpBeeStatus(ctx, instance, reqLogger)
 		if err != nil {
-			reqLogger.Info("employeeBeeController: error in reassigning bee to foodsource")
+			reqLogger.V(4).Info("EBC:employeeBeeController: error in reassigning bee to foodsource")
 			return result, err
 		}
+		reqLogger.V(5).Info("EBC:employeeBeeController:  cycle-status: InProgress: " + empStatusToString(instance.Status.EmployeeBees))
 	}
 
 	// 6. update fs vector
 	if instance.Status.EmployeeBeeCycleStatus == "Completed" {
-		result, err := updateFoodsources(instance, reqLogger)
+		result, err := updateEmpFoodsources(instance, reqLogger)
 		if err != nil {
-			reqLogger.Info("employeeBeeController: error in updating fs vector")
+			reqLogger.V(4).Info("EBC:employeeBeeController: error in updating fs vector")
 			return result, err
 		}
+		reqLogger.V(5).Info("EBC:employeeBeeController:  cycle-status: Completed: " + empStatusToString(instance.Status.EmployeeBees))
 	}
 
-	reqLogger.Info("Instance before 7.: " + colonyStatusString(instance.Status))
 	// 7. end of employee cycle
 	result, err = r.endOfEmpCycle(ctx, instance, &employeeBeeDeployment, reqLogger)
 	if err != nil {
 		return result, err
 	}
-	reqLogger.Info("Instance after 7.: " + colonyStatusString(instance.Status))
+	reqLogger.V(5).Info("EBC:employeeBeeController:  endOfEmpCycle: " + empStatusToString(instance.Status.EmployeeBees))
 
+	reqLogger.V(4).Info("EBC:-------------------------------------- ------------------------------------------")
 	return ctrl.Result{}, nil
 }
 
@@ -98,7 +107,7 @@ func (r *ColonyReconciler) getEmpPodList(ctx context.Context, instance *abcoptim
 	if err != nil {
 		return []core.Pod{}, err
 	}
-	reqLogger.Info("getEmpPodList: pod list: " + fmt.Sprint(employeeBeeList.Items))
+	reqLogger.V(10).Info("EBC:getEmpPodList: pod list: " + fmt.Sprint(employeeBeeList.Items))
 	employeeList := employeeBeeList.Items
 	returnList := []core.Pod{}
 	for _, bee := range employeeList {
@@ -110,9 +119,9 @@ func (r *ColonyReconciler) getEmpPodList(ctx context.Context, instance *abcoptim
 }
 
 func initEmployeeBees(instance *abcoptimizerv1.Colony, employeeList []core.Pod, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("initEmployeeBees: enter")
+	reqLogger.V(8).Info("EBC:initEmployeeBees: enter")
 	// 1. if all bees have not been created, wait
-	reqLogger.Info("initEmployeeBees: number of employee pods: " + fmt.Sprint(len(employeeList)))
+	reqLogger.V(10).Info("EBC:initEmployeeBees: number of employee pods: " + fmt.Sprint(len(employeeList)))
 
 	empBeeStatus := map[string]abcoptimizerv1.BeeStatus{}
 	for _, bee := range employeeList {
@@ -130,7 +139,7 @@ func initEmployeeBees(instance *abcoptimizerv1.Colony, employeeList []core.Pod, 
 	}
 
 	if len(empBeeStatus) < int(instance.Spec.FoodSourceNumber) {
-		reqLogger.Info("initEmployeeBees: exit with warning")
+		reqLogger.V(4).Info("EBC:initEmployeeBees: exit with warning")
 		return ctrl.Result{}, nil
 	}
 
@@ -138,26 +147,26 @@ func initEmployeeBees(instance *abcoptimizerv1.Colony, employeeList []core.Pod, 
 	instance.Status.EmployeeBees = empBeeStatus
 	instance.Status.EmployeeBeeCycleStatus = "Started"
 
-	reqLogger.Info("initEmployeeBees: employee bees: " + empLogString(instance.Status.EmployeeBees))
-	reqLogger.Info("initEmployeeBees: exit")
+	reqLogger.V(5).Info("EBC:initEmployeeBees: employee bees: " + empStatusToString(instance.Status.EmployeeBees))
+	reqLogger.V(8).Info("EBC:initEmployeeBees: exit")
 	return ctrl.Result{}, nil
 }
 
 func (r *ColonyReconciler) registerAndAssign(ctx context.Context, instance *abcoptimizerv1.Colony, employeeList []core.Pod, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("registerAndAssign: enter")
+	reqLogger.V(8).Info("EBC:registerAndAssign: enter")
 	// 1. if all bees have not been created, wait
 	if len(employeeList) < int(instance.Spec.FoodSourceNumber) {
 		return ctrl.Result{}, nil
 	}
 
 	// 2. register and assign foodsource to bee
-	reqLogger.Info("registerAndAssign: register and assign foodsource to bee")
+	reqLogger.V(8).Info("EBC:registerAndAssign: register and assign foodsource to bee")
 	instance.Status.EmployeeBeeCycleStatus = "InProgress"
 	// something wrong here
 	for _, bee := range employeeList {
-		reqLogger.Info("registerAndAssign: iterating: " + bee.GetName())
+		reqLogger.V(8).Info("EBC:registerAndAssign: iterating: " + bee.GetName())
 		if instance.Status.EmployeeBees[bee.GetName()].Status == "New" {
-			availableId, availableFoodsource, err := findAvailableFoodsource(instance, reqLogger)
+			availableId, availableFoodsource, err := empFindAvailableFoodsource(instance, reqLogger)
 			if err != nil {
 				// TODO: vacate again
 
@@ -176,16 +185,16 @@ func (r *ColonyReconciler) registerAndAssign(ctx context.Context, instance *abco
 			empStatus.FoodsourceTrialCount = availableFoodsource.TrialCount
 			empStatus.ObjFuncStatus = false
 			instance.Status.EmployeeBees[bee.GetName()] = empStatus
-			reqLogger.Info("registerAndAssign: update colony status : " + fmt.Sprint(empStatus))
+			// reqLogger.V(7).Info("EBC:registerAndAssign: update colony status : " + fmt.Sprint(empStatus))
 		}
 	}
-	reqLogger.Info("registerAndAssign: registering: " + empLogString(instance.Status.EmployeeBees))
-	reqLogger.Info("registerAndAssign: exit")
+	reqLogger.V(5).Info("EBC:registerAndAssign: registering: " + empStatusToString(instance.Status.EmployeeBees))
+	reqLogger.V(8).Info("EBC:registerAndAssign: exit")
 	return ctrl.Result{}, nil
 }
 
 func (r *ColonyReconciler) reassignEmpBeeStatus(ctx context.Context, instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("reassignEmpBeeStatus: enter")
+	reqLogger.V(8).Info("EBC:reassignEmpBeeStatus: enter")
 	// rassign bee status
 	for bee, value := range instance.Status.EmployeeBees {
 		// if bee waiting, bee reserved fs, fs occupied by none
@@ -201,13 +210,13 @@ func (r *ColonyReconciler) reassignEmpBeeStatus(ctx context.Context, instance *a
 		}
 		instance.Status.EmployeeBees[bee] = value
 	}
-	reqLogger.Info("reassignEmpBeeStatus: status: " + empLogString(instance.Status.EmployeeBees))
-	reqLogger.Info("reassignEmpBeeStatus: exit")
+	reqLogger.V(5).Info("EBC:reassignEmpBeeStatus: status: " + empStatusToString(instance.Status.EmployeeBees))
+	reqLogger.V(8).Info("EBC:reassignEmpBeeStatus: exit")
 	return ctrl.Result{}, nil
 }
 
-func findAvailableFoodsource(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (string, abcoptimizerv1.FoodsourceStatus, error) {
-	reqLogger.Info("finaAvailableFoodsource: enter")
+func empFindAvailableFoodsource(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (string, abcoptimizerv1.FoodsourceStatus, error) {
+	reqLogger.V(8).Info("EBC:finaAvailableFoodsource: enter")
 	foodsources := instance.Status.FoodSources
 	empBeeStatus := instance.Status.EmployeeBees
 	for id, value := range foodsources {
@@ -225,16 +234,16 @@ func findAvailableFoodsource(instance *abcoptimizerv1.Colony, reqLogger logr.Log
 			if confirm {
 				continue
 			}
-			reqLogger.Info("finaAvailableFoodsource: exit")
+			reqLogger.V(8).Info("EBC:finaAvailableFoodsource: exit")
 			return id, value, nil
 		}
 	}
-	reqLogger.Info("finaAvailableFoodsource: exit with error")
+	reqLogger.V(8).Info("EBC:finaAvailableFoodsource: exit with error")
 	return "", abcoptimizerv1.FoodsourceStatus{}, fmt.Errorf("all foodsources occupied/reserved by employee")
 }
 
 func (r *ColonyReconciler) endOfEmpCycle(ctx context.Context, instance *abcoptimizerv1.Colony, employeeBeeDeployment *apps.Deployment, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("endOfEmpCycle: enter")
+	reqLogger.V(8).Info("EBC:endOfEmpCycle: enter")
 	employeeBees := instance.Status.EmployeeBees
 
 	doneCount := 0
@@ -243,13 +252,13 @@ func (r *ColonyReconciler) endOfEmpCycle(ctx context.Context, instance *abcoptim
 		employeeBeePod := core.Pod{}
 		err := r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: bee}, &employeeBeePod)
 		if errors.IsNotFound(err) {
-			reqLogger.Info("endOfEmpCycle: could not find existing Employee Bee Pod for Colony")
+			reqLogger.V(4).Info("EBC:endOfEmpCycle: could not find existing Employee Bee Pod for Colony")
 			value.Status = "Done"
 			doneCount += 1
 			continue
 		}
 		if err != nil {
-			reqLogger.Info("endOfEmpCycle: failed to get Employee Bee Pod for Colony resource")
+			reqLogger.V(4).Info("EBC:endOfEmpCycle: failed to get Employee Bee Pod for Colony resource")
 			value.Status = "Done"
 			doneCount += 1
 			continue
@@ -260,51 +269,51 @@ func (r *ColonyReconciler) endOfEmpCycle(ctx context.Context, instance *abcoptim
 	}
 
 	if doneCount >= int(instance.Spec.FoodSourceNumber) {
-		reqLogger.Info("endOfEmpCycle: Re-Initializing Employees in the Colony")
+		reqLogger.V(8).Info("EBC:endOfEmpCycle: Re-Initializing Employees in the Colony")
 
 		instance.Status.EmployeeBeeCycles += 1
 
-		reqLogger.Info("endOfEmpCycle: Attempting to delete employee-bee deploymnet")
+		reqLogger.V(8).Info("EBC:endOfEmpCycle: Attempting to delete employee-bee deployment")
 		employeeBeeDeployment := apps.Deployment{}
 		err := r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: employeeBeeName}, &employeeBeeDeployment)
 		if errors.IsNotFound(err) {
-			reqLogger.Info("endOfEmpCycle: could not find existing Employee Bee Deployment for Colony")
+			reqLogger.V(4).Info("EBC:endOfEmpCycle: could not find existing Employee Bee Deployment for Colony")
 		} else {
-			reqLogger.Info("endOfEmpCycle: Deleting employee deploymnet")
+			reqLogger.V(8).Info("EBC:endOfEmpCycle: Deleting employee deployment")
 			if err := r.Client.Delete(ctx, &employeeBeeDeployment, &client.DeleteOptions{}); err != nil {
-				reqLogger.Error(err, "failed to delete Employee Bee Deployment resource")
+				reqLogger.Error(err, "EBC:failed to delete Employee Bee Deployment resource")
 				return ctrl.Result{}, err
 			}
 		}
 
 		// if err := r.Client.Delete(ctx, employeeBeeDeployment, &client.DeleteOptions{}); err != nil {
-		// 	reqLogger.Error(err, "endOfEmpCycle: failed to delete Employee Bee Deployment resource")
+		// 	reqLogger.Error(err, "EBC:endOfEmpCycle: failed to delete Employee Bee Deployment resource")
 
 		// 	return ctrl.Result{}, err
 		// }
 		instance.Status.EmployeeBeeCycleStatus = "Completed"
 	}
-	reqLogger.Info("endOfEmpCycle: exit")
+	reqLogger.V(8).Info("EBC:endOfEmpCycle: exit")
 	return ctrl.Result{}, nil
 }
 
 func checkFs(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) bool {
-	reqLogger.Info("checkFs: enter")
+	reqLogger.V(8).Info("EBC:checkFs: enter")
 	for _, val := range instance.Status.FoodSources {
 		if len(val.Foodsource) == 0 {
+			reqLogger.V(8).Info("EBC:checkFs: exit with false")
 			return false
 		}
 	}
-	reqLogger.Info("checkFs: exit")
+	reqLogger.V(8).Info("EBC:checkFs: exit with true")
 	return true
 }
 
 func generateNewEmpFsVector(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
-	reqLogger.Info("generateNewEmpFsVector: enter")
-	reqLogger.Info("generateNewEmpFsVector: instance status: " + empFsLogString(instance.Status.EmployeeBees))
-	reqLogger.Info("generateNewEmpFsVector: check availability of foodsources")
+	reqLogger.V(8).Info("EBC:generateNewEmpFsVector: enter")
+	reqLogger.V(7).Info("EBC:generateNewEmpFsVector: instance status: " + empFoodSourceDataToString(instance.Status.EmployeeBees))
 	if !checkFs(instance, reqLogger) {
-		reqLogger.Info("generateNewEmpFsVector: foodsource vector is empty")
+		reqLogger.V(8).Info("EBC:generateNewEmpFsVector: foodsource vector is empty")
 	}
 	for bee, value := range instance.Status.EmployeeBees {
 		id := value.FoodsourceId
@@ -312,13 +321,13 @@ func generateNewEmpFsVector(instance *abcoptimizerv1.Colony, reqLogger logr.Logg
 			continue
 		}
 		currentVector := instance.Status.FoodSources[id].Foodsource
-		reqLogger.Info("food source vector for " + id + " : " + fmt.Sprint(currentVector))
+		reqLogger.V(8).Info("EBC:food source vector for " + id + " : " + fmt.Sprint(currentVector))
 		partnerId := fmt.Sprint(rand.Intn(int(instance.Spec.FoodSourceNumber)))
 		for partnerId == id {
 			partnerId = fmt.Sprint(rand.Intn(int(instance.Spec.FoodSourceNumber)))
 		}
 		partnerVector := instance.Status.FoodSources[partnerId].Foodsource
-		reqLogger.Info("partner vector for " + partnerId + " : " + fmt.Sprint(partnerVector))
+		reqLogger.V(8).Info("EBC:partner vector for " + partnerId + " : " + fmt.Sprint(partnerVector))
 		j := rand.Intn(int(instance.Spec.FoodsourceVectorLength))
 		max := float32(1)
 		min := float32(-1)
@@ -327,13 +336,13 @@ func generateNewEmpFsVector(instance *abcoptimizerv1.Colony, reqLogger logr.Logg
 		copy(newVector, currentVector)
 		curPosVal, err := strconv.ParseFloat(currentVector[j], 32)
 		if err != nil {
-			reqLogger.Info("generateNewEmpFsVector: " + err.Error())
+			reqLogger.V(4).Info("EBC:generateNewEmpFsVector: " + err.Error())
 			return ctrl.Result{}, err
 		}
 		partnerPosVal, err := strconv.ParseFloat(partnerVector[j], 32)
 		if err != nil {
-			reqLogger.Info("generateNewEmpFsVector: failed to convert partner vector to float")
-			reqLogger.Info("generateNewEmpFsVector: " + err.Error())
+			reqLogger.V(4).Info("EBC:generateNewEmpFsVector: failed to convert partner vector to float")
+			reqLogger.V(4).Info("EBC:generateNewEmpFsVector: " + err.Error())
 			return ctrl.Result{}, err
 		}
 		newVector[j] = fmt.Sprint(float32(curPosVal) + phi*(float32(curPosVal)-float32(partnerPosVal)))
@@ -345,10 +354,10 @@ func generateNewEmpFsVector(instance *abcoptimizerv1.Colony, reqLogger logr.Logg
 		employeeBeeStatus.ObjectiveFunction = value.ObjectiveFunction
 		employeeBeeStatus.Status = value.Status
 		instance.Status.EmployeeBees[bee] = *employeeBeeStatus
-		reqLogger.Info("generateNewEmpFsVector: Fs Vector " + id + ": " + fmt.Sprint(instance.Status.EmployeeBees[bee].FoodsourceVector))
+		// reqLogger.V(7).Info("EBC:generateNewEmpFsVector: Fs Vector " + id + ": " + fmt.Sprint(instance.Status.EmployeeBees[bee].FoodsourceVector))
 	}
-	reqLogger.Info("generateNewEmpFsVector: bee " + fmt.Sprint(instance.Status.EmployeeBees))
-	reqLogger.Info("generateNewEmpFsVector: exit")
+	reqLogger.V(7).Info("EBC:generateNewEmpFsVector: instance status: " + empFoodSourceDataToString(instance.Status.EmployeeBees))
+	reqLogger.V(8).Info("EBC:generateNewEmpFsVector: exit")
 	return ctrl.Result{}, nil
 }
 
@@ -360,20 +369,21 @@ func evaluateFitness(obj_func_val float32) float32 {
 	}
 }
 
-func updateFoodsources(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
+func updateEmpFoodsources(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
+	reqLogger.V(8).Info("EBC:updateEmpFoodsources: enter")
 	for bee, value := range instance.Status.EmployeeBees {
 		if !value.ObjFuncStatus {
 			continue
 		}
 		newObjFunc, err := strconv.ParseFloat(value.ObjectiveFunction, 32)
 		if err != nil {
-			reqLogger.Error(err, "updateFoodsources: cannot convert new obj func to float")
+			reqLogger.Error(err, "EBC:updateEmpFoodsources: cannot convert new obj func to float")
 			return ctrl.Result{}, err
 		}
 		newFitness := evaluateFitness(float32(newObjFunc))
 		curObjFunc, err := strconv.ParseFloat(instance.Status.FoodSources[value.FoodsourceId].ObjectiveFunction, 32)
 		if err != nil {
-			reqLogger.Error(err, "updateFoodsources: cannot convert cur obj func to float")
+			reqLogger.Error(err, "EBC:updateEmpFoodsources: cannot convert cur obj func to float")
 			return ctrl.Result{}, err
 		}
 		curFitness := evaluateFitness(float32(curObjFunc))
@@ -383,53 +393,62 @@ func updateFoodsources(instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (
 		if newFitness >= curFitness {
 			employeeBeeStatus.FoodsourceTrialCount = 0
 			employeeBeeStatus.ObjectiveFunction = fmt.Sprint(newObjFunc)
+			reqLogger.V(8).Info("EBC:updateEmpFoodsources: updated to new the foodsource vector; ObjectiveFunction = " + fmt.Sprint(newObjFunc))
 		} else {
 			employeeBeeStatus.FoodsourceVector = instance.Status.FoodSources[value.FoodsourceId].Foodsource
 			employeeBeeStatus.FoodsourceTrialCount = employeeBeeStatus.FoodsourceTrialCount + 1
+			reqLogger.V(8).Info("EBC:updateEmpFoodsources: retain old foodsource vector, trialcount updated to " + fmt.Sprint(employeeBeeStatus.FoodsourceTrialCount))
 		}
 		instance.Status.EmployeeBees[bee] = *employeeBeeStatus
 	}
+	reqLogger.V(8).Info("EBC:updateEmpFoodsources: exit")
 	return ctrl.Result{}, nil
 }
 
 func (r *ColonyReconciler) deployEmployeeBees(ctx context.Context, employeeBeeDeployment *apps.Deployment, instance *abcoptimizerv1.Colony, reqLogger logr.Logger) (ctrl.Result, error) {
+	reqLogger.V(8).Info("EBC:deployEmployeeBees: enter")
 	err := r.Client.Get(ctx, client.ObjectKey{Namespace: instance.Namespace, Name: employeeBeeName}, employeeBeeDeployment)
 	if errors.IsNotFound(err) {
-		reqLogger.Info("could not find existing Employee Bee Deployment for Colony, creating one...")
+		reqLogger.V(8).Info("EBC:deployEmployeeBees: could not find existing Employee Bee Deployment for Colony, creating one...")
 
 		employeeBeeDeployment = buildEmployeeBeeDeployment(*instance)
 		if err := r.Client.Create(ctx, employeeBeeDeployment); err != nil {
-			reqLogger.Error(err, "failed to create Employee Bee Deployment resource")
+			reqLogger.Error(err, "EBC:deployEmployeeBees: failed to create Employee Bee Deployment resource")
+			reqLogger.V(8).Info("EBC:deployEmployeeBees: exit")
 			return ctrl.Result{}, err
 		}
 
 		r.Recorder.Eventf(instance, core.EventTypeNormal, "Created", "Created Employee Bee deployment %q", employeeBeeDeployment.Name)
-		reqLogger.Info("created Employee Bee Deployment resource for Colony")
+		reqLogger.V(8).Info("EBC:deployEmployeeBees: created Employee Bee Deployment resource for Colony")
+		reqLogger.V(8).Info("EBC:deployEmployeeBees: exit")
 		return ctrl.Result{}, nil
 	}
 	if err != nil {
-		reqLogger.Error(err, "failed to get Employee Bee Deployment for Colony resource")
+		reqLogger.Error(err, "EBC:deployEmployeeBees: failed to get Employee Bee Deployment for Colony resource")
+		reqLogger.V(8).Info("EBC:deployEmployeeBees: exit")
 		return ctrl.Result{}, err
 	}
-	reqLogger.Info("existing Employee Bee Deployment resource already exists forColony, checking replica count")
+	reqLogger.V(8).Info("EBC:existing Employee Bee Deployment resource already exists forColony, checking replica count")
 
 	expectedEmployeeColonys := instance.Spec.FoodSourceNumber
 
 	if *employeeBeeDeployment.Spec.Replicas != expectedEmployeeColonys {
-		reqLogger.Info("updating replica count", "old_count", *employeeBeeDeployment.Spec.Replicas, "new_count", expectedEmployeeColonys)
+		reqLogger.V(8).Info("EBC:deployEmployeeBees: updating replica count", "old_count", *employeeBeeDeployment.Spec.Replicas, "new_count", expectedEmployeeColonys)
 
 		employeeBeeDeployment.Spec.Replicas = &expectedEmployeeColonys
 		if err := r.Client.Update(ctx, employeeBeeDeployment); err != nil {
-			reqLogger.Error(err, "failed to update Employee Bee Deployment replica count")
+			reqLogger.Error(err, "EBC:deployEmployeeBees: failed to update Employee Bee Deployment replica count")
+			reqLogger.V(8).Info("EBC:deployEmployeeBees: exit")
 			return ctrl.Result{}, err
 		}
 
 		r.Recorder.Eventf(instance, core.EventTypeNormal, "Scaled", "Scaled Employee Bee deployment %q to %d replicas", employeeBeeDeployment.Name, expectedEmployeeColonys)
-
+		reqLogger.V(8).Info("EBC:deployEmployeeBees: exit")
 		return ctrl.Result{}, nil
 	}
 
-	reqLogger.Info("replica count up to date", "replica_count", *employeeBeeDeployment.Spec.Replicas)
+	reqLogger.V(8).Info("EBC:deployEmployeeBees: replica count up to date", "replica_count", *employeeBeeDeployment.Spec.Replicas)
+	reqLogger.V(8).Info("EBC:deployEmployeeBees: exit")
 	return ctrl.Result{}, nil
 }
 
@@ -503,16 +522,30 @@ func buildEmployeeBeeDeployment(Colony abcoptimizerv1.Colony) *apps.Deployment {
 	return &deployment
 }
 
-func empLogString(beeStatus map[string]abcoptimizerv1.BeeStatus) string {
+func empStatusToString(beeStatus map[string]abcoptimizerv1.BeeStatus) string {
 	empLogStatus := ""
+
+	empLogStatus += "emp:["
 	for bee, status := range beeStatus {
-		empLogStatus += fmt.Sprint(bee, ": {", status.Status, ", ", status.ObjFuncStatus, ", ", status.FoodsourceTrialCount, "}, ")
+		empLogStatus += fmt.Sprint(bee, ": ", status.Status, ", ")
 	}
 	return empLogStatus
 }
 
-func empFsLogString(beeStatus map[string]abcoptimizerv1.BeeStatus) string {
+func empObjectiveFunctionStatusToString(beeStatus map[string]abcoptimizerv1.BeeStatus) string {
 	empLogStatus := ""
+
+	empLogStatus += "emp:["
+	for bee, status := range beeStatus {
+		empLogStatus += fmt.Sprint(bee, ": ", status.ObjFuncStatus, ", ")
+	}
+	return empLogStatus
+}
+
+func empFoodSourceDataToString(beeStatus map[string]abcoptimizerv1.BeeStatus) string {
+	empLogStatus := ""
+
+	empLogStatus += "emp:["
 	for bee, status := range beeStatus {
 		empLogStatus += fmt.Sprint(bee, ": ", status.FoodsourceVector, ", ", status.FoodsourceTrialCount, "; ")
 	}
