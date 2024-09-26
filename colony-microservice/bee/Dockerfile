@@ -4,11 +4,11 @@ FROM python:3.8-slim-buster
 
 WORKDIR /app
 
-COPY employee.py ./
+COPY bee.py ./
 COPY logr.py ./
-COPY sample_app.py ./
+COPY linear.py ./
 
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir kubernetes
 
-CMD ["python", "./employee.py"]
+CMD ["python", "./linear.py"]

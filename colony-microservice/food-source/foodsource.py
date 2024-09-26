@@ -1,10 +1,5 @@
-from datetime import datetime
 import time
-import os
 
-from pprint import pprint
-
-import random
 from kubernetes.client.rest import ApiException
 
 from kubernetes import client, config
@@ -22,7 +17,7 @@ class Foodsource:
 				api = client.CustomObjectsApi()
 
 				api_response = api.get_namespaced_custom_object_status(
-					group="abc-optimizer.innoventestech.com",
+					group="abc-optimizer.pesu.edu",
 					version="v1",
 					name="colony-sample",
 					namespace="default",
@@ -44,7 +39,7 @@ class Foodsource:
 			api = client.CustomObjectsApi()
 
 			api_response = api.get_namespaced_custom_object_status(
-				group="abc-optimizer.innoventestech.com",
+				group="abc-optimizer.pesu.edu",
 				version="v1",
 				name="colony-sample",
 				namespace="default",
@@ -97,7 +92,7 @@ class Foodsource:
 		try:
 			api = client.CustomObjectsApi()
 			api_response = api.patch_namespaced_custom_object_status(
-					group="abc-optimizer.innoventestech.com",
+					group="abc-optimizer.pesu.edu",
 					version="v1",
 					name="colony-sample",
 					namespace="default",
@@ -149,7 +144,7 @@ class Foodsource:
 			api = client.CustomObjectsApi()
 
 			api_response = api.get_namespaced_custom_object_status(
-				group="abc-optimizer.innoventestech.com",
+				group="abc-optimizer.pesu.edu",
 				version="v1",
 				name="colony-sample",
 				namespace="default",
@@ -233,9 +228,9 @@ class Foodsource:
 			logr.logger.info("wait...")
 			time.sleep(2)
 
-			self.foodsources = self.get_foodsources()
+			# self.foodsources = self.get_foodsources()
 			logr.logger.info("wait_for_termination: "+str(self.foodsources)+ "\n")
-			self.check_fs_vector_trials()
+			# self.check_fs_vector_trials()
 
 	
 
@@ -245,12 +240,12 @@ def main():
 
 	foodsource = Foodsource()
 
-	# 1. Initialize foodsources
-	req = foodsource.init_foodsources()
-	print("init completed")
-	print(req)
-	logr.logger.info("init completed")
-	logr.logger.info(str(req)+ "\n")
+	# # 1. Initialize foodsources
+	# req = foodsource.init_foodsources()
+	# print("init completed")
+	# print(req)
+	# logr.logger.info("init completed")
+	# logr.logger.info(str(req)+ "\n")
 
 	# 2. Wait to terminate
 	foodsource.wait_for_termination()

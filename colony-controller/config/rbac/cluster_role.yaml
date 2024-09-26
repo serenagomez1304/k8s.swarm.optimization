@@ -4,7 +4,7 @@ metadata:
   name: colony-sample-role
 rules:
 - apiGroups:
-  - abc-optimizer.innoventestech.com
+  - abc-optimizer.pesu.edu
   resources:
   - colonies
   - colonies/status

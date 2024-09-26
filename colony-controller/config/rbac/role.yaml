@@ -6,7 +6,7 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
-  - abc-optimizer.innoventestech.com
+  - abc-optimizer.pesu.edu
   resources:
   - colonies
   verbs:
@@ -18,13 +18,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - abc-optimizer.innoventestech.com
+  - abc-optimizer.pesu.edu
   resources:
   - colonies/finalizers
   verbs:
   - update
 - apiGroups:
-  - abc-optimizer.innoventestech.com
+  - abc-optimizer.pesu.edu
   resources:
   - colonies/status
   verbs:
